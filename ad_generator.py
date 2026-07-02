@@ -2,7 +2,6 @@ from groq import Groq
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
 import os
-from rembg import remove
 from config import GROQ_API_KEY
 
 client = Groq(api_key=GROQ_API_KEY)

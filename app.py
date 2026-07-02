@@ -6,7 +6,7 @@ from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
 from ai_screener import screen_applicant
 from exporter import export_qualified, export_all
-from ad_generator import generate_ad_image
+from ad_generator import generate_job_ad
 from config import SECRET_KEY, CAMPUSES
 
 app = Flask(__name__)
