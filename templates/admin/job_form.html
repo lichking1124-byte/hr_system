@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}{% if job %}Edit Job{% else %}New Job{% endif %} — BulSU HR Portal{% endblock %}
+
+{% block navbar %}
+<nav class="navbar">
+    <a href="/" class="logo">BulSU <span>HR Portal</span></a>
+    <div>
+        <a href="/admin">Dashboard</a>
+        <a href="/admin/logout">Logout</a>
+    </div>
+</nav>
+{% endblock %}
+
+{% block extra_style %}
+.doc-list { margin-top: 10px; }
+.doc-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: #fff8d6;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    border-left: 3px solid var(--gold-dark);
+}
+.doc-item input[type="checkbox"] { width: auto; accent-color: var(--plum); }
+.add-doc { display: flex; gap: 10px; margin-top: 12px; }
+.add-doc input { flex: 1; }
+.section-divider {
+    font-size: 15px;
+    font-weight: bold;
+    color: var(--plum);
+    margin: 25px 0 15px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--gold);
+}
+.qual-row {
+    display: flex;
+    gap: 15px;
+    align-items: flex-end;
+    margin-top: 10px;
+}
+.qual-row > div:first-child { flex: 1; }
+.mandatory-box {
+    min-width: 100px;
+    padding-bottom: 8px;
+    text-align: center;
+}
+.mandatory-box label {
+    font-size: 12px;
+    color: #888;
+    margin-top: 0;
+    margin-bottom: 6px;
+}
+.mandatory-note {
+    font-size: 13px;
+    color: #666;
+    background: #fff8d6;
+    padding: 10px 14px;
+    border-radius: 6px;
+    border-left: 3px solid var(--gold-dark);
+    margin-bottom: 15px;
+}
+{% endblock %}
+
+{% block content %}
+<div style="max-width:700px; margin:0 auto;">
+    <div class="page-header">
+        <h1>{% if job %}Edit Job Posting{% else %}New Job Posting{% endif %}</h1>
+        <p>{% if job %}Update the details for this position{% else %}Create a new position listing{% endif %}</p>
+    </div>
+
+    <div class="card">
+        <form method="POST">
+            <div class="section-divider">Position Details</div>
+
+            <label>Campus *</label>
+            <select name="campus" required>
+                {% for campus in campuses %}
+                <option value="{{ campus }}"
+                    {% if job and job.campus == campus %}selected{% endif %}>
+                    {{ campus }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <label>Job Title *</label>
+            <input name="title" placeholder="e.g. Administrative Officer"
+                   value="{{ job.title if job else '' }}" required>
+
+            <label>Job Description</label>
+            <textarea name="description"
+                      placeholder="Describe the role and responsibilities...">{{ job.description if job else '' }}</textarea>
+
+            <div class="section-divider">Qualifications</div>
+
+            <div class="mandatory-note">
+                ⚠️ Check <strong>Mandatory</strong> to <strong>automatically disqualify</strong>
+                applicants who cannot verify that requirement through submitted documents.
+            </div>
+
+            <div class="qual-row">
+                <div>
+                    <label style="margin-top:0;">Required Skills</label>
+                    <input name="skills"
+                           placeholder="e.g. Microsoft Office, communication, filing"
+                           value="{{ job.skills if job else '' }}">
+                </div>
+                <div class="mandatory-box">
+                    <label>Mandatory?</label>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
+                        <input type="checkbox" name="mandatory_skills"
+                               style="width:auto; accent-color:var(--plum);"
+                               {% if mandatory and 'skills' in mandatory %}checked{% endif %}>
+                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="qual-row">
+                <div>
+                    <label style="margin-top:0;">Minimum Experience</label>
+                    <input name="experience" placeholder="e.g. 2 years in admin role"
+                           value="{{ job.experience if job else '' }}">
+                </div>
+                <div class="mandatory-box">
+                    <label>Mandatory?</label>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
+                        <input type="checkbox" name="mandatory_experience"
+                               style="width:auto; accent-color:var(--plum);"
+                               {% if mandatory and 'experience' in mandatory %}checked{% endif %}>
+                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="qual-row">
+                <div>
+                    <label style="margin-top:0;">Education Requirement</label>
+                    <input name="education" placeholder="e.g. Bachelor's degree in any field"
+                           value="{{ job.education if job else '' }}">
+                </div>
+                <div class="mandatory-box">
+                    <label>Mandatory?</label>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
+                        <input type="checkbox" name="mandatory_education"
+                               style="width:auto; accent-color:var(--plum);"
+                               {% if mandatory and 'education' in mandatory %}checked{% endif %}>
+                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="qual-row">
+                <div>
+                    <label style="margin-top:0;">Other Requirements / Eligibility</label>
+                    <input name="other_requirements"
+                           placeholder="e.g. PRC License, CS Professional, willing to work on-site"
+                           value="{{ job.other_requirements if job else '' }}">
+                </div>
+                <div class="mandatory-box">
+                    <label>Mandatory?</label>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
+                        <input type="checkbox" name="mandatory_other"
+                               style="width:auto; accent-color:var(--plum);"
+                               {% if mandatory and 'other' in mandatory %}checked{% endif %}>
+                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-divider">Required Documents</div>
+            <p style="font-size:13px; color:#666; margin-bottom:12px;">
+                Select the documents applicants must submit for this position.
+            </p>
+
+            <div class="doc-list">
+                {% set default_docs = ['Resume', 'Transcript of Records', 'Diploma',
+                'Certificate of Employment', 'Training Certificates',
+                'Government ID', 'PRC License', 'Medical Certificate',
+                'Birth Certificate', 'NBI Clearance'] %}
+                {% set selected_docs = required_docs if required_docs is defined else [] %}
+
+                {% for doc in default_docs %}
+                <div class="doc-item">
+                    <input type="checkbox" name="required_documents" value="{{ doc }}"
+                           {% if doc in selected_docs %}checked{% endif %}>
+                    <span>{{ doc }}</span>
+                </div>
+                {% endfor %}
+
+                {% for doc in selected_docs %}
+                    {% if doc not in default_docs %}
+                    <div class="doc-item">
+                        <input type="checkbox" name="required_documents"
+                               value="{{ doc }}" checked>
+                        <span>{{ doc }}</span>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            <div class="add-doc">
+                <input type="text" id="custom-doc"
+                       placeholder="Add a custom document requirement...">
+                <button type="button" class="btn btn-primary" onclick="addCustomDoc()">
+                    + Add
+                </button>
+            </div>
+
+            {% if job %}
+            <div style="margin-top:20px; padding:12px 15px; background:#fff8d6;
+                        border-radius:6px; border-left:3px solid var(--gold-dark);">
+                <label style="display:flex; align-items:center; gap:10px;
+                              font-weight:normal; margin:0; color:#333;">
+                    <input type="checkbox" name="is_active" style="width:auto;"
+                           {% if job.is_active %}checked{% endif %}>
+                    <span>Active — visible to applicants on the portal</span>
+                </label>
+            </div>
+            {% endif %}
+
+            <div style="display:flex; gap:10px; margin-top:25px;">
+                <button type="submit" class="btn btn-gold"
+                        style="flex:1; padding:13px; font-size:15px;">
+                    {% if job %}Save Changes{% else %}Create Job Posting{% endif %}
+                </button>
+                <a href="/admin" class="btn btn-primary" style="padding:13px;">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function addCustomDoc() {
+    const input = document.getElementById('custom-doc');
+    const val = input.value.trim();
+    if (!val) return;
+    const div = document.createElement('div');
+    div.className = 'doc-item';
+    div.innerHTML = `
+        <input type="checkbox" name="required_documents" value="${val}" checked
+               style="width:auto; accent-color:#671E1E;">
+        <span>${val}</span>
+    `;
+    document.querySelector('.doc-list').appendChild(div);
+    input.value = '';
+}
+</script>
+{% endblock %}

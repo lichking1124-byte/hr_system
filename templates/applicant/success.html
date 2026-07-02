@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Application Submitted — BulSU HR Portal{% endblock %}
+
+{% block content %}
+<div style="text-align:center; padding: 60px 20px;">
+    <div style="font-size:72px; margin-bottom:20px;">✅</div>
+    <h1 style="color:var(--plum); margin-bottom:10px; font-size:28px;">
+        Application Submitted!
+    </h1>
+    <p style="color:#666; font-size:16px; margin-bottom:5px;">
+        Thank you, <strong style="color:var(--plum);">{{ name }}</strong>!
+    </p>
+    <p style="color:#666; font-size:15px; margin-bottom:30px;">
+        Your application for <strong>{{ job.title }}</strong> at
+        <strong>{{ job.campus }}</strong> has been received.
+    </p>
+    <div class="alert alert-info" style="max-width:550px; margin:0 auto 30px; text-align:left;">
+        📧 The HR office will review your documents and contact you at your provided email regarding the next steps.
+    </div>
+    <a href="/" class="btn btn-primary" style="padding:12px 30px; font-size:15px;">
+        Browse More Openings
+    </a>
+</div>
+{% endblock %}

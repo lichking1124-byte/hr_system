@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}BulSU HR Portal{% endblock %}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f0f0; color: #333; }
+
+        /* ── BulSU Color Variables ── */
+        :root {
+            --plum: #671E1E;
+            --plum-dark: #4a1515;
+            --plum-light: #8c3c3c;
+            --gold: #FFEB5B;
+            --gold-dark: #e6d200;
+            --white: #ffffff;
+            --bg: #f5f0f0;
+            --text-muted: #888;
+        }
+
+        /* ── Navbar ── */
+        .navbar {
+            background: var(--plum);
+            padding: 0 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 65px;
+            border-bottom: 4px solid var(--gold);
+        }
+        .navbar .logo {
+            color: var(--white);
+            font-size: 22px;
+            font-weight: bold;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .navbar .logo span { color: var(--gold); }
+        .navbar a {
+            color: var(--white);
+            text-decoration: none;
+            margin-left: 20px;
+            font-size: 14px;
+            padding: 8px 14px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .navbar a:hover { background: var(--plum-light); color: var(--gold); }
+
+        /* ── Container ── */
+        .container {
+            max-width: 1100px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--white);
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(103,30,30,0.08);
+            margin-bottom: 20px;
+            border-top: 3px solid var(--plum);
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            text-align: center;
+            font-weight: bold;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.88; }
+        .btn-primary { background: var(--plum); color: var(--white); }
+        .btn-gold { background: var(--gold); color: var(--plum); }
+        .btn-success { background: #2d7a3a; color: white; }
+        .btn-danger { background: #c0392b; color: white; }
+        .btn-warning { background: #c87f0a; color: white; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+        /* ── Alerts ── */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        .alert-success { background: #d4edda; border-left: 4px solid #2d7a3a; color: #1a4d24; }
+        .alert-danger { background: #fde8e8; border-left: 4px solid var(--plum); color: var(--plum); }
+        .alert-info { background: #fff8d6; border-left: 4px solid var(--gold-dark); color: #7a6000; }
+
+        /* ── Badges ── */
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .badge-success { background: #d4edda; color: #1a4d24; }
+        .badge-danger { background: #fde8e8; color: var(--plum); }
+        .badge-warning { background: #fff3cd; color: #856404; }
+        .badge-gold { background: var(--gold); color: var(--plum); }
+
+        /* ── Form Elements ── */
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            margin-top: 15px;
+            color: var(--plum);
+            font-size: 14px;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--plum);
+            box-shadow: 0 0 0 2px rgba(103,30,30,0.15);
+        }
+        textarea { height: 100px; resize: vertical; }
+
+        /* ── Page Header ── */
+        .page-header {
+            background: var(--plum);
+            color: var(--white);
+            padding: 25px 30px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            border-bottom: 4px solid var(--gold);
+        }
+        .page-header h1 { font-size: 26px; margin-bottom: 5px; }
+        .page-header p { font-size: 14px; opacity: 0.85; }
+
+        /* ── Footer ── */
+        .footer {
+            background: var(--plum);
+            color: var(--white);
+            text-align: center;
+            padding: 20px;
+            font-size: 13px;
+            margin-top: 50px;
+            border-top: 4px solid var(--gold);
+        }
+        .footer span { color: var(--gold); }
+
+        {% block extra_style %}{% endblock %}
+    </style>
+</head>
+<body>
+    {% block navbar %}
+    <nav class="navbar">
+        <a href="/" class="logo">
+            BulSU <span>HR Portal</span>
+        </a>
+        <div>
+            <a href="/">Job Openings</a>
+            <a href="/admin">Admin</a>
+        </div>
+    </nav>
+    {% endblock %}
+
+    <div class="container">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                <div class="alert alert-success">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <div class="footer">
+        <span>Bulacan State University</span> — Human Resource Management Office<br>
+        Quality Education for Relevant Development
+    </div>
+</body>
+</html>

@@ -1,0 +1,6 @@
+.env 
+__pycache__/ 
+venv/ 
+static/uploads/ 
+static/ads/ 
+*.db 

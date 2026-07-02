@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Apply — {{ job.title }}{% endblock %}
+
+{% block extra_style %}
+.apply-header {
+    background: var(--plum);
+    color: var(--white);
+    padding: 25px 30px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    border-bottom: 4px solid var(--gold);
+}
+.apply-header h1 { font-size: 22px; }
+.apply-header p { font-size: 14px; opacity: 0.85; margin-top: 5px; }
+.section-divider {
+    font-size: 15px;
+    font-weight: bold;
+    color: var(--plum);
+    margin: 25px 0 15px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--gold);
+}
+.file-note { font-size: 12px; color: #999; margin-top: 4px; }
+{% endblock %}
+
+{% block content %}
+<div class="apply-header">
+    <h1>Apply for: {{ job.title }}</h1>
+    <p>📍 {{ job.campus }}</p>
+</div>
+
+<div class="card">
+    <form method="POST" enctype="multipart/form-data">
+        <div class="section-divider">Personal Information</div>
+
+        <label>Full Name *</label>
+        <input name="full_name" placeholder="e.g. Juan Dela Cruz" required>
+
+        <label>Email Address *</label>
+        <input name="email" type="email" placeholder="e.g. juan@email.com" required>
+
+        <label>Phone Number</label>
+        <input name="phone" placeholder="e.g. 09123456789">
+
+        <div class="section-divider">Upload Required Documents</div>
+        <p style="font-size:13px; color:#666; margin-bottom:15px;">
+            Please upload PDF files only. Make sure all documents are clear and readable.
+        </p>
+
+        {% for doc in required_docs %}
+        <label>{{ doc }} *</label>
+        <input type="file" name="{{ doc.replace(' ', '_').lower() }}"
+               accept=".pdf" required>
+        <p class="file-note">PDF files only</p>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-gold"
+                style="width:100%; padding:14px; font-size:16px; margin-top:25px;">
+            Submit Application →
+        </button>
+    </form>
+</div>
+
+<a href="/job/{{ job.id }}"
+   style="display:block; text-align:center; margin-top:10px; color:var(--plum); font-size:14px;">
+    ← Back to Job Details
+</a>
+{% endblock %}

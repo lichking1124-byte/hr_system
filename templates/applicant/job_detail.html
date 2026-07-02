@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} — BulSU HR Portal{% endblock %}
+
+{% block extra_style %}
+.job-header {
+    background: var(--plum);
+    color: var(--white);
+    padding: 30px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    border-bottom: 4px solid var(--gold);
+}
+.job-header h1 { font-size: 26px; margin-bottom: 8px; }
+.job-header p { opacity: 0.85; font-size: 14px; }
+.section-title {
+    font-size: 15px;
+    font-weight: bold;
+    color: var(--plum);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--gold);
+}
+.spec-item {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    align-items: flex-start;
+}
+.spec-label {
+    font-weight: bold;
+    color: var(--plum);
+    min-width: 150px;
+}
+.doc-item {
+    background: #fff8d6;
+    padding: 10px 15px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    border-left: 4px solid var(--gold-dark);
+    color: var(--plum);
+    font-weight: bold;
+}
+{% endblock %}
+
+{% block content %}
+<div class="job-header">
+    <h1>{{ job.title }}</h1>
+    <p>📍 {{ job.campus }}</p>
+</div>
+
+<div class="card">
+    <div class="section-title">Job Description</div>
+    <p style="font-size:14px; line-height:1.8; color:#444;">{{ job.description }}</p>
+</div>
+
+<div class="card">
+    <div class="section-title">Qualifications</div>
+    <div class="spec-item">
+        <span class="spec-label">Required Skills:</span>
+        <span>{{ job.skills }}</span>
+    </div>
+    <div class="spec-item">
+        <span class="spec-label">Experience:</span>
+        <span>{{ job.experience }}</span>
+    </div>
+    <div class="spec-item">
+        <span class="spec-label">Education:</span>
+        <span>{{ job.education }}</span>
+    </div>
+    {% if job.other_requirements %}
+    <div class="spec-item">
+        <span class="spec-label">Other Requirements:</span>
+        <span>{{ job.other_requirements }}</span>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="section-title">Required Documents to Submit</div>
+    {% for doc in required_docs %}
+    <div class="doc-item">📄 {{ doc }}</div>
+    {% endfor %}
+</div>
+
+<div style="display:flex; gap:10px; margin-top:10px;">
+    <a href="/apply/{{ job.id }}" class="btn btn-gold"
+       style="flex:1; padding:14px; font-size:16px;">
+        Apply Now →
+    </a>
+    <a href="/" class="btn btn-primary" style="padding:14px;">← Back</a>
+</div>
+{% endblock %}

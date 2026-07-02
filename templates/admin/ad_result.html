@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Job Ad — {{ job.title }}{% endblock %}
+
+{% block navbar %}
+<nav class="navbar">
+    <a href="/" class="logo">BulSU <span>HR Portal</span></a>
+    <div>
+        <a href="/admin">Dashboard</a>
+        <a href="/admin/logout">Logout</a>
+    </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:750px; margin:0 auto;">
+    <div class="page-header">
+        <h1>Job Ad — {{ job.title }}</h1>
+        <p>📍 {{ job.campus }}</p>
+    </div>
+
+    <div class="card">
+        <div style="font-size:15px; font-weight:bold; color:var(--plum);
+                    margin-bottom:15px; padding-bottom:8px; border-bottom:2px solid var(--gold);">
+            Generated Poster
+        </div>
+        <img src="/static/ads/{{ image }}"
+             style="width:100%; border-radius:8px; border:2px solid #eee;">
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:5px;">
+        <a href="/static/ads/{{ image }}" download
+           class="btn btn-gold" style="flex:1; padding:13px; text-align:center;">
+            ⬇ Download Poster
+        </a>
+        <a href="/admin/job/{{ job.id }}/generate-ad"
+           class="btn btn-primary" style="padding:13px;">
+            🔄 Regenerate
+        </a>
+        <a href="/admin" class="btn btn-warning" style="padding:13px;">
+            ← Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}

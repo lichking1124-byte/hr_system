@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — BulSU HR Portal{% endblock %}
+
+{% block navbar %}
+<nav class="navbar">
+    <a href="/" class="logo">BulSU <span>HR Portal</span></a>
+    <div>
+        <a href="/admin">Dashboard</a>
+        <a href="/admin/job/new">+ New Job</a>
+        <a href="/admin/logout">Logout</a>
+    </div>
+</nav>
+{% endblock %}
+
+{% block extra_style %}
+.campus-title {
+    font-size: 17px;
+    font-weight: bold;
+    color: var(--plum);
+    padding: 10px 15px;
+    border-left: 5px solid var(--gold);
+    background: white;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    margin-top: 10px;
+    box-shadow: 0 2px 6px rgba(103,30,30,0.08);
+}
+.job-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: white;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 4px rgba(103,30,30,0.07);
+    border-left: 4px solid var(--plum);
+}
+.job-row:hover { border-left-color: var(--gold-dark); }
+.job-row.archived {
+    background: #f9f9f9;
+    border-left-color: #ccc;
+    opacity: 0.75;
+}
+.job-row-title { font-weight: bold; color: var(--plum); font-size: 15px; }
+.job-row-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.job-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.no-jobs { color: #ccc; font-size: 14px; padding: 8px 15px; }
+.tab-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+}
+.tab-btn {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-weight: bold;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+}
+.tab-btn.active {
+    color: var(--plum);
+    border-bottom-color: var(--gold);
+}
+.archived-section { display: none; }
+.archived-section.show { display: block; }
+.archive-date { font-size: 11px; color: #999; margin-top: 2px; }
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Admin Dashboard</h1>
+    <p>Manage job postings across all BulSU campuses</p>
+</div>
+
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+    <div class="tab-buttons">
+        <button class="tab-btn active" onclick="showTab('active')">
+            ✅ Active Postings
+        </button>
+        <button class="tab-btn" onclick="showTab('archived')">
+            📦 Archived ({{ archived_jobs|length }})
+        </button>
+    </div>
+    <a href="/admin/job/new" class="btn btn-gold">+ Add New Job Posting</a>
+</div>
+
+<!-- ── ACTIVE JOBS ── -->
+<div id="active-tab">
+    {% if jobs_by_campus | length > 0 %}
+        {% for campus in campuses %}
+        <div class="campus-title">📍 {{ campus }}</div>
+        {% set campus_jobs = jobs_by_campus[campus] %}
+        {% if campus_jobs %}
+            {% for job in campus_jobs %}
+            <div class="job-row">
+                <div>
+                    <div class="job-row-title">{{ job.title }}</div>
+                    <div class="job-row-meta">
+                        {% if job.is_active %}
+                        <span class="badge badge-success">Active</span>
+                        {% else %}
+                        <span class="badge badge-danger">Inactive</span>
+                        {% endif %}
+                        &nbsp; Posted: {{ job.created_at[:10] }}
+                    </div>
+                </div>
+                <div class="job-actions">
+                    <a href="/admin/job/{{ job.id }}/applicants"
+                       class="btn btn-primary btn-sm">👥 Applicants</a>
+                    <a href="/admin/job/{{ job.id }}/generate-ad"
+                       class="btn btn-gold btn-sm">🖼️ Job Ad</a>
+                    <a href="/admin/job/{{ job.id }}/edit"
+                       class="btn btn-warning btn-sm">✏️ Edit</a>
+                    <form method="POST" action="/admin/job/{{ job.id }}/delete"
+                          onsubmit="return confirm('Archive this job posting?')">
+                        <button type="submit" class="btn btn-danger btn-sm">📦 Archive</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="no-jobs">No active job postings for this campus.</p>
+        {% endif %}
+        {% endfor %}
+    {% else %}
+        <div class="card" style="text-align:center; color:#aaa; padding:40px;">
+            No active job postings. <a href="/admin/job/new" style="color:var(--plum);">Create one</a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- ── ARCHIVED JOBS ── -->
+<div id="archived-tab" class="archived-section">
+    {% if archived_jobs %}
+        <div class="campus-title">📦 Archived Job Postings</div>
+        {% for job in archived_jobs %}
+        <div class="job-row archived">
+            <div>
+                <div class="job-row-title">{{ job.title }}</div>
+                <div class="job-row-meta">
+                    📍 {{ job.campus }}
+                </div>
+                <div class="archive-date">
+                    Archived: {{ job.archived_at[:10] }}
+                    {% set archived_date = job.archived_at | string %}
+                    {% set days_archived = (now | default(none)).days | default(0) %}
+                </div>
+            </div>
+            <div class="job-actions">
+                <form method="POST" action="/admin/job/{{ job.id }}/restore"
+                      onsubmit="return confirm('Restore this job posting?')">
+                    <button type="submit" class="btn btn-primary btn-sm">↩️ Restore</button>
+                </form>
+                <form method="POST" action="/admin/job/{{ job.id }}/delete"
+                      onsubmit="return confirm('Permanently delete this job posting? This cannot be undone.')">
+                    <button type="submit" class="btn btn-danger btn-sm">🗑️ Delete</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="card" style="text-align:center; color:#aaa; padding:40px;">
+            No archived job postings.
+        </div>
+    {% endif %}
+</div>
+
+<script>
+function showTab(tab) {
+    document.getElementById('active-tab').style.display = tab === 'active' ? 'block' : 'none';
+    document.getElementById('archived-tab').classList.remove('show');
+    document.getElementById('archived-tab').style.display = tab === 'archived' ? 'block' : 'none';
+    
+    if (tab === 'archived') {
+        document.getElementById('archived-tab').classList.add('show');
+    }
+    
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+}
+</script>
+{% endblock %}

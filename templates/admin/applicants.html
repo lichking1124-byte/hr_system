@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Applicants — {{ job.title }}{% endblock %}
+
+{% block navbar %}
+<nav class="navbar">
+    <a href="/" class="logo">BulSU <span>HR Portal</span></a>
+    <div>
+        <a href="/admin">Dashboard</a>
+        <a href="/admin/logout">Logout</a>
+    </div>
+</nav>
+{% endblock %}
+
+{% block extra_style %}
+.applicant-card {
+    background: white;
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 6px rgba(103,30,30,0.08);
+    border-left: 5px solid #ddd;
+}
+.applicant-card.qualified { border-left-color: #2d7a3a; }
+.applicant-card.unqualified { border-left-color: var(--plum); }
+.applicant-card.pending { border-left-color: var(--gold-dark); }
+.applicant-name { font-weight: bold; font-size: 16px; color: var(--plum); }
+.applicant-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.applicant-reason { font-size: 13px; color: #555; margin-top: 8px; line-height: 1.6; }
+.score-badge { font-size: 20px; font-weight: bold; color: var(--plum); }
+.stats-bar {
+    display: flex;
+    gap: 20px;
+    padding: 15px 20px;
+    background: white;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 6px rgba(103,30,30,0.08);
+    border-top: 3px solid var(--plum);
+    font-size: 14px;
+    flex-wrap: wrap;
+}
+.strengths-box {
+    background: #d4edda;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-top: 8px;
+    border-left: 4px solid #2d7a3a;
+    font-size: 13px;
+    color: #1a4d24;
+}
+.strengths-box strong { display: block; margin-bottom: 5px; color: #0d3322; }
+.strengths-box ul { margin: 5px 0 0 20px; padding: 0; }
+.strengths-box li { margin: 3px 0; }
+.weaknesses-box {
+    background: #fde8e8;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-top: 6px;
+    border-left: 4px solid var(--plum);
+    font-size: 13px;
+    color: var(--plum);
+}
+.weaknesses-box strong { display: block; margin-bottom: 5px; }
+.weaknesses-box ul { margin: 5px 0 0 20px; padding: 0; }
+.weaknesses-box li { margin: 3px 0; }
+.auto-fail-box {
+    background: #fde8e8;
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--plum);
+    font-weight: bold;
+    border-left: 3px solid var(--plum);
+}
+.action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ job.title }}</h1>
+    <p>📍 {{ job.campus }}</p>
+</div>
+
+<div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
+    <a href="/admin/job/{{ job.id }}/screen" class="btn btn-primary">
+        🤖 Screen Unscreened Applicants
+    </a>
+    <a href="/admin/job/{{ job.id }}/download/qualified" class="btn btn-gold">
+        ⬇ Qualified List
+    </a>
+    <a href="/admin/job/{{ job.id }}/download/all" class="btn btn-warning">
+        ⬇ All Results
+    </a>
+    <a href="/admin/job/{{ job.id }}/download/all-documents" class="btn btn-success">
+        📦 All Documents (ZIP)
+    </a>
+    <a href="/admin" class="btn btn-primary" style="margin-left:auto;">
+        ← Dashboard
+    </a>
+</div>
+
+<div class="stats-bar">
+    <span>📋 Total: <strong>{{ applicants|length }}</strong></span>
+    <span style="color:#2d7a3a;">✅ Qualified:
+        <strong>{{ applicants|selectattr('screening_result','equalto','qualified')|list|length }}</strong>
+    </span>
+    <span style="color:var(--plum);">❌ Unqualified:
+        <strong>{{ applicants|selectattr('screening_result','equalto','unqualified')|list|length }}</strong>
+    </span>
+    <span style="color:var(--gold-dark);">⏳ Pending:
+        <strong>{{ applicants|selectattr('is_screened','equalto',0)|list|length }}</strong>
+    </span>
+</div>
+
+{% if applicants %}
+    {% for a in applicants %}
+    <div class="applicant-card {{ a.screening_result if a.is_screened else 'pending' }}">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px;">
+            <div style="flex:1;">
+                <div class="applicant-name">{{ a.full_name }}</div>
+                <div class="applicant-meta">
+                    📧 {{ a.email }} &nbsp;|&nbsp;
+                    📱 {{ a.phone or 'N/A' }} &nbsp;|&nbsp;
+                    🗓 Applied: {{ a.applied_at[:10] }}
+                </div>
+
+                {% if a.is_screened %}
+                <div class="applicant-reason">{{ a.screening_reason }}</div>
+
+                {% if a.screening_strengths %}
+                {% set strengths = a.screening_strengths | replace('"','') | replace('[','') | replace(']','') | replace("'","") %}
+                <div class="strengths-box">
+                    <strong>✅ Strengths:</strong>
+                    <ul>
+                        {% for strength in strengths.split(', ') %}
+                        <li>{{ strength.strip() }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if a.screening_weaknesses %}
+                {% set weaknesses = a.screening_weaknesses | replace('"','') | replace('[','') | replace(']','') | replace("'","") %}
+                <div class="weaknesses-box">
+                    <strong>⚠️ Weaknesses:</strong>
+                    <ul>
+                        {% for weakness in weaknesses.split(', ') %}
+                        <li>{{ weakness.strip() }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if a.screening_missing %}
+                {% set missing_text = a.screening_missing | replace('"','') | replace('[','') | replace(']','') | replace('\\','') %}
+                {% if 'Auto-failed' in missing_text %}
+                <div class="auto-fail-box">
+                    🚫 AUTO-FAILED: {{ missing_text }}
+                </div>
+                {% endif %}
+                {% endif %}
+
+                {% else %}
+                <div class="applicant-meta" style="margin-top:8px; color:var(--gold-dark);">
+                    ⏳ Pending screening — click Screen button above
+                </div>
+                {% endif %}
+            </div>
+
+            <div style="text-align:center; min-width:100px;">
+                {% if a.is_screened %}
+                <div class="score-badge">{{ a.screening_score }}/100</div>
+                {% if a.screening_result == 'qualified' %}
+                <span class="badge badge-success">Qualified</span>
+                {% else %}
+                <span class="badge badge-danger">Unqualified</span>
+                {% endif %}
+                {% else %}
+                <span class="badge badge-warning">Pending</span>
+                {% endif %}
+                
+                <div class="action-buttons" style="margin-top:10px;">
+                    <a href="/admin/job/{{ job.id }}/download/documents/{{ a.id }}" 
+                       class="btn btn-success btn-sm">
+                        📥 Docs
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="card" style="text-align:center; color:#aaa; padding:50px;">
+        No applicants yet for this position.
+    </div>
+{% endif %}
+{% endblock %}

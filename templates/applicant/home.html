@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}BulSU HR Portal — Job Openings{% endblock %}
+
+{% block extra_style %}
+.hero {
+    background: var(--plum);
+    color: var(--white);
+    padding: 50px 40px;
+    border-radius: 10px;
+    margin-bottom: 30px;
+    text-align: center;
+    border-bottom: 5px solid var(--gold);
+    position: relative;
+    overflow: hidden;
+}
+.hero h1 { font-size: 32px; margin-bottom: 10px; }
+.hero h1 span { color: var(--gold); }
+.hero p { font-size: 15px; opacity: 0.85; }
+.campus-section { margin-bottom: 30px; }
+.campus-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--plum);
+    padding: 10px 15px;
+    border-left: 5px solid var(--gold);
+    background: white;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 6px rgba(103,30,30,0.08);
+}
+.job-card {
+    background: white;
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 8px rgba(103,30,30,0.07);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-left: 4px solid var(--plum);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.job-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(103,30,30,0.13);
+    border-left-color: var(--gold-dark);
+}
+.job-title { font-size: 16px; font-weight: bold; color: var(--plum); }
+.job-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.no-jobs { color: #bbb; font-size: 14px; padding: 10px 15px; }
+{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>Bulacan State <span>University</span></h1>
+    <p>Human Resource Management Office — Job Openings</p>
+    <p style="margin-top:8px; font-size:13px; opacity:0.7;">
+        Browse available positions across all campuses
+    </p>
+</div>
+
+{% for campus, jobs in jobs_by_campus.items() %}
+<div class="campus-section">
+    <div class="campus-title">📍 {{ campus }}</div>
+    {% if jobs %}
+        {% for job in jobs %}
+        <div class="job-card">
+            <div>
+                <div class="job-title">{{ job.title }}</div>
+                <div class="job-meta">
+                    🎓 {{ job.education }} &nbsp;|&nbsp; 💼 {{ job.experience }}
+                </div>
+            </div>
+            <a href="/job/{{ job.id }}" class="btn btn-primary">View Details</a>
+        </div>
+        {% endfor %}
+    {% else %}
+        <p class="no-jobs">No current openings for this campus.</p>
+    {% endif %}
+</div>
+{% endfor %}
+{% endblock %}
