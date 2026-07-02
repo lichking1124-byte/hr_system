@@ -12,8 +12,11 @@ from config import SECRET_KEY, CAMPUSES
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
-os.makedirs("static/uploads", exist_ok=True)
-os.makedirs("static/ads", exist_ok=True)
+try:
+    os.makedirs("static/uploads", exist_ok=True)
+    os.makedirs("static/ads", exist_ok=True)
+except OSError:
+    pass
 
 init_db()
 
