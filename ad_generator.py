@@ -52,7 +52,7 @@ def remove_bg(logo_path):
         print(f"BG removal failed: {e}")
         return None
 
-def generate_ad_image(job):
+def generate_job_ad(job):
     os.makedirs("static/ads", exist_ok=True)
 
     W, H = 850, 650
