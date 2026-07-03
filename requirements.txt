@@ -4,4 +4,5 @@ pdfplumber
 pillow
 python-dotenv
 pandas
-openpyxlgunicorn 
+openpyxl
+gunicorn
