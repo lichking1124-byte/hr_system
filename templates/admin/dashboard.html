@@ -107,7 +107,7 @@
                         {% else %}
                         <span class="badge badge-danger">Inactive</span>
                         {% endif %}
-                        &nbsp; Posted: {{ job.created_at[:10] }}
+                        &nbsp; Posted: {{ job.created_at.strftime('%Y-%m-%d') if job.created_at else '' }}
                     </div>
                 </div>
                 <div class="job-actions">
@@ -147,7 +147,7 @@
                     📍 {{ job.campus }}
                 </div>
                 <div class="archive-date">
-                    Archived: {{ job.archived_at[:10] }}
+                    Archived: {{ job.archived_at.strftime('%Y-%m-%d') if job.archived_at else '' }}
                     {% set archived_date = job.archived_at | string %}
                     {% set days_archived = (now | default(none)).days | default(0) %}
                 </div>

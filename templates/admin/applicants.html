@@ -126,7 +126,7 @@
                 <div class="applicant-meta">
                     📧 {{ a.email }} &nbsp;|&nbsp;
                     📱 {{ a.phone or 'N/A' }} &nbsp;|&nbsp;
-                    🗓 Applied: {{ a.applied_at[:10] }}
+                    🗓 Applied: {{ a.applied_at.strftime('%Y-%m-%d') if a.applied_at else '' }}
                 </div>
 
                 {% if a.is_screened %}
