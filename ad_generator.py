@@ -44,9 +44,9 @@ def remove_bg(logo_path):
     try:
         with open(logo_path, "rb") as f:
             data = f.read()
-        output = remove(data)
-        from io import BytesIO
-        logo = Image.open(BytesIO(output)).convert("RGBA")
+        # Background removal disabled (rembg not available on hosting).
+        # Falling back to the raw image directly.
+        logo = Image.open(logo_path).convert("RGBA")
         return logo
     except Exception as e:
         print(f"BG removal failed: {e}")
@@ -180,4 +180,4 @@ def generate_job_ad(job):
     filepath = os.path.join("static/ads", filename)
     img.save(filepath)
 
-    return filename, job['title']
+    return filepath, filename
