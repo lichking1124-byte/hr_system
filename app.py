@@ -385,7 +385,7 @@ def admin_generate_ad(job_id):
         return "Job not found", 404
 
     job = dict(job)
-    filename, ad_text = generate_ad_image(job)
+    filepath, filename = generate_job_ad(job)
 
     return render_template('admin/ad_result.html',
                            image=filename,
