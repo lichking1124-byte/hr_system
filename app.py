@@ -7,6 +7,7 @@ from resume_parser import extract_text_from_pdf
 from ai_screener import screen_applicant
 from exporter import export_qualified, export_all
 from ad_generator import generate_job_ad
+from cloudinary_uploader import upload_file
 from config import SECRET_KEY, CAMPUSES
 
 app = Flask(__name__)
@@ -76,22 +77,18 @@ def apply(job_id):
         ''', (job_id, full_name, email, phone))
         applicant_id = cursor.lastrowid
 
-        upload_folder = f"static/uploads/{applicant_id}"
-        os.makedirs(upload_folder, exist_ok=True)
-
         for doc_type in required_docs:
             field_name = doc_type.replace(' ', '_').lower()
             if field_name in request.files:
                 file = request.files[field_name]
                 if file and file.filename:
                     filename = f"{field_name}_{file.filename}"
-                    filepath = os.path.join(upload_folder, filename)
-                    file.save(filepath)
+                    cloud_url = upload_file(file, folder=f"applicant_{applicant_id}")
                     cursor.execute('''
                         INSERT INTO applicant_documents
                         (applicant_id, document_type, filename, filepath)
                         VALUES (?, ?, ?, ?)
-                    ''', (applicant_id, doc_type, filename, filepath))
+                    ''', (applicant_id, doc_type, filename, cloud_url))
 
         conn.commit()
         conn.close()
