@@ -34,7 +34,7 @@ Education: {job['education']}
 Keep it under 50 words. Make it clear and professional.
 """
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.7
     )
