@@ -79,8 +79,8 @@ def apply(job_id):
 
         for doc_type in required_docs:
             field_name = doc_type.replace(' ', '_').lower()
-            if field_name in request.files:
-                file = request.files[field_name]
+            files = request.files.getlist(field_name)
+            for file in files:
                 if file and file.filename:
                     filename = f"{field_name}_{file.filename}"
                     cloud_url = upload_file(file, folder=f"applicant_{applicant_id}")
@@ -331,7 +331,10 @@ def admin_screen(job_id):
         documents_text = {}
         for doc in docs:
             text = extract_text_from_pdf(doc['filepath'])
-            documents_text[doc['document_type']] = text
+            if doc['document_type'] in documents_text:
+                documents_text[doc['document_type']] += "\n\n--- Additional document ---\n\n" + text
+            else:
+                documents_text[doc['document_type']] = text
 
         result = screen_applicant(documents_text, job_specs)
 
