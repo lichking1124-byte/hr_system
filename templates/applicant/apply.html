@@ -50,7 +50,7 @@
         {% for doc in required_docs %}
         <label>{{ doc }} *</label>
         <input type="file" name="{{ doc.replace(' ', '_').lower() }}"
-               accept=".pdf" required>
+               accept=".pdf" multiple required>
         <p class="file-note">PDF files only</p>
         {% endfor %}
 
