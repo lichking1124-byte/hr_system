@@ -147,7 +147,7 @@
                     📍 {{ job.campus }}
                 </div>
                 <div class="archive-date">
-                    Archived: {{ job.archived_at.strftime('%Y-%m-%d') if job.archived_at else '' }}
+                    Archived: {{ job.archived_at[:10] if job.archived_at else '' }}
                     {% set archived_date = job.archived_at | string %}
                     {% set days_archived = (now | default(none)).days | default(0) %}
                 </div>
