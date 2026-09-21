@@ -299,6 +299,64 @@ def admin_applicants(job_id):
 
     return render_template('admin/applicants.html', job=job, applicants=applicants)
 
+def screen_one_applicant(conn, applicant, job_specs):
+    docs = conn.execute(
+        'SELECT * FROM applicant_documents WHERE applicant_id = ?',
+        (applicant['id'],)
+    ).fetchall()
+
+    documents_text = {}
+    for doc in docs:
+        text = extract_text_from_pdf(doc['filepath'])
+        if doc['document_type'] in documents_text:
+            documents_text[doc['document_type']] += "\n\n--- Additional document ---\n\n" + text
+        else:
+            documents_text[doc['document_type']] = text
+
+    result = screen_applicant(documents_text, job_specs)
+
+    auto_failed = result.get('auto_failed', False)
+    missing = result.get('missing', [])
+    unverified = result.get('unverified_claims', [])
+    combined = missing + [f"Unverified: {u}" for u in unverified]
+    strengths = result.get('strengths', [])
+    weaknesses = result.get('weaknesses', [])
+
+    final_qualified = result['qualified'] and not auto_failed
+
+    conn.execute('''
+        UPDATE applicants SET
+        screening_score = ?,
+        screening_result = ?,
+        screening_reason = ?,
+        screening_missing = ?,
+        screening_strengths = ?,
+        screening_weaknesses = ?,
+        is_screened = 1
+        WHERE id = ?
+    ''', (
+        result['score'],
+        'qualified' if final_qualified else 'unqualified',
+        result['reason'],
+        json.dumps(combined),
+        json.dumps(strengths),
+        json.dumps(weaknesses),
+        applicant['id']
+    ))
+    conn.commit()
+
+def build_job_specs(job):
+    mandatory = json.loads(job['mandatory_requirements']) if job['mandatory_requirements'] else []
+    return {
+        'title': job['title'],
+        'campus': job['campus'],
+        'skills': job['skills'],
+        'experience': job['experience'],
+        'education': job['education'],
+        'other_requirements': job['other_requirements'],
+        'mandatory_requirements': mandatory
+    }
+
 @app.route('/admin/job/<int:job_id>/screen')
 def admin_screen(job_id):
     if 'admin' not in session:
@@ -310,66 +368,35 @@ def admin_screen(job_id):
         'SELECT * FROM applicants WHERE job_id = ? AND is_screened = 0', (job_id,)
     ).fetchall()
 
-    mandatory = json.loads(job['mandatory_requirements']) if job['mandatory_requirements'] else []
-
-    job_specs = {
-        'title': job['title'],
-        'campus': job['campus'],
-        'skills': job['skills'],
-        'experience': job['experience'],
-        'education': job['education'],
-        'other_requirements': job['other_requirements'],
-        'mandatory_requirements': mandatory
-    }
+    job_specs = build_job_specs(job)
 
     for applicant in applicants:
-        docs = conn.execute(
-            'SELECT * FROM applicant_documents WHERE applicant_id = ?',
-            (applicant['id'],)
-        ).fetchall()
-
-        documents_text = {}
-        for doc in docs:
-            text = extract_text_from_pdf(doc['filepath'])
-            if doc['document_type'] in documents_text:
-                documents_text[doc['document_type']] += "\n\n--- Additional document ---\n\n" + text
-            else:
-                documents_text[doc['document_type']] = text
-
-        result = screen_applicant(documents_text, job_specs)
-
-        auto_failed = result.get('auto_failed', False)
-        missing = result.get('missing', [])
-        unverified = result.get('unverified_claims', [])
-        combined = missing + [f"Unverified: {u}" for u in unverified]
-        strengths = result.get('strengths', [])
-        weaknesses = result.get('weaknesses', [])
-
-        final_qualified = result['qualified'] and not auto_failed
-
-        conn.execute('''
-            UPDATE applicants SET
-            screening_score = ?,
-            screening_result = ?,
-            screening_reason = ?,
-            screening_missing = ?,
-            screening_strengths = ?,
-            screening_weaknesses = ?,
-            is_screened = 1
-            WHERE id = ?
-        ''', (
-            result['score'],
-            'qualified' if final_qualified else 'unqualified',
-            result['reason'],
-            json.dumps(combined),
-            json.dumps(strengths),
-            json.dumps(weaknesses),
-            applicant['id']
-        ))
-        conn.commit()
+        screen_one_applicant(conn, applicant, job_specs)
 
     conn.close()
     flash('Screening complete!')
+    return redirect(url_for('admin_applicants', job_id=job_id))
+
+@app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/rescreen')
+def admin_rescreen_one(job_id, applicant_id):
+    if 'admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    conn = get_db()
+    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
+    applicant = conn.execute(
+        'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
+    ).fetchone()
+
+    if not job or not applicant:
+        conn.close()
+        return "Not found", 404
+
+    job_specs = build_job_specs(job)
+    screen_one_applicant(conn, applicant, job_specs)
+    conn.close()
+
+    flash('Applicant re-screened!')
     return redirect(url_for('admin_applicants', job_id=job_id))
 
 @app.route('/admin/job/<int:job_id>/generate-ad')

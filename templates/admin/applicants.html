@@ -189,6 +189,12 @@
                        class="btn btn-success btn-sm">
                         📥 Docs
                     </a>
+                    {% if a.is_screened %}
+                    <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}/rescreen"
+                       class="btn btn-warning btn-sm">
+                        🔄 Re-screen
+                    </a>
+                    {% endif %}
                 </div>
             </div>
         </div>
