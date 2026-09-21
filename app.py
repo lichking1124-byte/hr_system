@@ -377,6 +377,26 @@ def admin_screen(job_id):
     flash('Screening complete!')
     return redirect(url_for('admin_applicants', job_id=job_id))
 
+@app.route('/admin/job/<int:job_id>/rescreen-all')
+def admin_rescreen_all(job_id):
+    if 'admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    conn = get_db()
+    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
+    applicants = conn.execute(
+        'SELECT * FROM applicants WHERE job_id = ?', (job_id,)
+    ).fetchall()
+
+    job_specs = build_job_specs(job)
+
+    for applicant in applicants:
+        screen_one_applicant(conn, applicant, job_specs)
+
+    conn.close()
+    flash('All applicants re-screened!')
+    return redirect(url_for('admin_applicants', job_id=job_id))
+
 @app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/rescreen')
 def admin_rescreen_one(job_id, applicant_id):
     if 'admin' not in session:

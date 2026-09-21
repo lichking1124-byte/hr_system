@@ -90,6 +90,10 @@
     <a href="/admin/job/{{ job.id }}/screen" class="btn btn-primary">
         🤖 Screen Unscreened Applicants
     </a>
+    <a href="/admin/job/{{ job.id }}/rescreen-all" class="btn btn-warning"
+       onclick="return confirm('Re-screen ALL applicants for this job? This will overwrite existing results.');">
+        🔄 Re-screen All
+    </a>
     <a href="/admin/job/{{ job.id }}/download/qualified" class="btn btn-gold">
         ⬇ Qualified List
     </a>
