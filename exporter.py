@@ -39,4 +39,6 @@ def export_all(applicants):
 
     df = pd.DataFrame(data)
     buffer = BytesIO()
-    df.to_excel(buffer,
+    df.to_excel(buffer, index=False, engine='openpyxl')
+    buffer.seek(0)
+    return buffer
