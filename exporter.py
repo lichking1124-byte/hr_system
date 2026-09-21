@@ -1,9 +1,10 @@
 import pandas as pd
+from io import BytesIO
 
-def export_qualified(applicants, filename="qualified_applicants.xlsx"):
+def export_qualified(applicants):
     if not applicants:
         return None
-    
+
     data = []
     for a in applicants:
         data.append({
@@ -14,15 +15,17 @@ def export_qualified(applicants, filename="qualified_applicants.xlsx"):
             'Reason': a['screening_reason'],
             'Verified Documents': a['screening_result']
         })
-    
-    df = pd.DataFrame(data)
-    df.to_excel(filename, index=False, engine='openpyxl')
-    return filename
 
-def export_all(applicants, filename="all_applicants.xlsx"):
+    df = pd.DataFrame(data)
+    buffer = BytesIO()
+    df.to_excel(buffer, index=False, engine='openpyxl')
+    buffer.seek(0)
+    return buffer
+
+def export_all(applicants):
     if not applicants:
         return None
-    
+
     data = []
     for a in applicants:
         data.append({
@@ -33,7 +36,7 @@ def export_all(applicants, filename="all_applicants.xlsx"):
             'Status': 'Qualified' if a['screening_result'] == 'qualified' else 'Unqualified',
             'Reason': a['screening_reason']
         })
-    
+
     df = pd.DataFrame(data)
-    df.to_excel(filename, index=False, engine='openpyxl')
-    return filename
+    buffer = BytesIO()
+    df.to_excel(buffer,
