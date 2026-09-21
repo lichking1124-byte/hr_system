@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash
 import os
 import json
+import requests
 from datetime import datetime, timedelta
 from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
@@ -460,9 +461,13 @@ def download_applicant_documents(job_id, applicant_id):
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for doc in docs:
-            if os.path.exists(doc['filepath']):
-                arcname = f"{applicant['full_name']}/{doc['filename']}"
-                zip_file.write(doc['filepath'], arcname=arcname)
+            try:
+                response = requests.get(doc['filepath'])
+                if response.status_code == 200:
+                    arcname = f"{applicant['full_name']}/{doc['filename']}"
+                    zip_file.writestr(arcname, response.content)
+            except Exception:
+                pass
 
     zip_buffer.seek(0)
     filename = f"{applicant['full_name'].replace(' ', '_')}_documents.zip"
@@ -495,9 +500,13 @@ def download_all_documents(job_id):
             conn.close()
 
             for doc in docs:
-                if os.path.exists(doc['filepath']):
-                    arcname = f"{applicant['full_name']}/{doc['document_type']}/{doc['filename']}"
-                    zip_file.write(doc['filepath'], arcname=arcname)
+                try:
+                    response = requests.get(doc['filepath'])
+                    if response.status_code == 200:
+                        arcname = f"{applicant['full_name']}/{doc['document_type']}/{doc['filename']}"
+                        zip_file.writestr(arcname, response.content)
+                except Exception:
+                    pass
 
     zip_buffer.seek(0)
     filename = f"{job['title'].replace(' ', '_')}_all_documents.zip"
