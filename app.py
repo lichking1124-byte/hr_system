@@ -520,19 +520,20 @@ def download_qualified(job_id):
 
     conn = get_db()
     applicants = conn.execute(
-        'SELECT * FROM applicants WHERE job_id = ? AND screening_result = "qualified"',
+        "SELECT * FROM applicants WHERE job_id = ? AND screening_result = 'qualified'",
         (job_id,)
     ).fetchall()
     conn.close()
 
     applicants = [dict(a) for a in applicants]
-    filename = export_qualified(applicants)
+    buffer = export_qualified(applicants)
 
-    if not filename:
+    if not buffer:
         flash('No qualified applicants to download.')
         return redirect(url_for('admin_applicants', job_id=job_id))
 
-    return send_file(filename, as_attachment=True)
+    return send_file(buffer, as_attachment=True, download_name="qualified_applicants.xlsx",
+                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 @app.route('/admin/job/<int:job_id>/download/all')
 def download_all(job_id):
@@ -547,13 +548,14 @@ def download_all(job_id):
     conn.close()
 
     applicants = [dict(a) for a in applicants]
-    filename = export_all(applicants)
+    buffer = export_all(applicants)
 
-    if not filename:
+    if not buffer:
         flash('No screened applicants to download.')
         return redirect(url_for('admin_applicants', job_id=job_id))
 
-    return send_file(filename, as_attachment=True)
+    return send_file(buffer, as_attachment=True, download_name="all_applicants.xlsx",
+                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
