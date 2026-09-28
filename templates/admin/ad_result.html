@@ -23,12 +23,12 @@
                     margin-bottom:15px; padding-bottom:8px; border-bottom:2px solid var(--gold);">
             Generated Poster
         </div>
-        <img src="/static/ads/{{ image }}"
+        <img src="{{ url_for('admin_ad_image', job_id=job.id) }}"
              style="width:100%; border-radius:8px; border:2px solid #eee;">
     </div>
 
     <div style="display:flex; gap:10px; margin-top:5px;">
-        <a href="/static/ads/{{ image }}" download
+        <a href="{{ url_for('admin_ad_image', job_id=job.id, download=1) }}"
            class="btn btn-gold" style="flex:1; padding:13px; text-align:center;">
             ⬇ Download Poster
         </a>

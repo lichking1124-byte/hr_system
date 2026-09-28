@@ -1,561 +1,181 @@
-from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash
+from groq import Groq
+from PIL import Image, ImageDraw, ImageFont
+import io
 import os
-import json
-import requests
-from datetime import datetime, timedelta
-from database import get_db, init_db
-from resume_parser import extract_text_from_pdf
-from ai_screener import screen_applicant
-from exporter import export_qualified, export_all
-from ad_generator import generate_job_ad
-from cloudinary_uploader import upload_file
-from config import SECRET_KEY, CAMPUSES
+from datetime import datetime, timezone, timedelta
+from config import GROQ_API_KEY
 
-app = Flask(__name__)
-app.secret_key = SECRET_KEY
+client = Groq(api_key=GROQ_API_KEY)
 
-try:
-    os.makedirs("static/uploads", exist_ok=True)
-    os.makedirs("static/ads", exist_ok=True)
-except OSError:
-    pass
+# BulSU Official Colors
+PLUM = (103, 30, 30)        # #671E1E Persian Plum
+GOLD = (255, 235, 91)       # #FFEB5B Official Gold
+WHITE = (255, 255, 255)
+LIGHT_PLUM = (140, 60, 60)
+DARK_PLUM = (70, 15, 15)
 
-init_db()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_PATH = os.path.join(BASE_DIR, "static", "ad_template.png")
 
-# ─── APPLICANT ROUTES ────────────────────────────────────────────
+# Bundled fonts so rendering is identical on Windows and on Vercel/Render (Linux).
+FONT_CANDIDATES = [
+    os.path.join(BASE_DIR, "static", "fonts", "DejaVuSans.ttf"),
+    "C:\\Windows\\Fonts\\arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
+FONT_BOLD_CANDIDATES = [
+    os.path.join(BASE_DIR, "static", "fonts", "DejaVuSans-Bold.ttf"),
+    "C:\\Windows\\Fonts\\arialbd.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+]
 
-@app.route('/')
-def home():
-    conn = get_db()
-    postings = conn.execute(
-        'SELECT * FROM job_postings WHERE is_active = 1 AND archived_at IS NULL ORDER BY campus, title'
-    ).fetchall()
-    conn.close()
+def get_font(size, bold=False):
+    for path in (FONT_BOLD_CANDIDATES if bold else FONT_CANDIDATES):
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
 
-    jobs_by_campus = {}
-    for campus in CAMPUSES:
-        jobs_by_campus[campus] = [p for p in postings if p['campus'] == campus]
+def generate_ad_text(job):
+    prompt = f"""
+Write a short professional job advertisement for Bulacan State University for:
+Position: {job['title']}
+Campus: {job['campus']}
+Skills needed: {job['skills']}
+Experience: {job['experience']}
+Education: {job['education']}
 
-    return render_template('applicant/home.html', jobs_by_campus=jobs_by_campus)
+Keep it under 50 words. Make it clear and professional.
+"""
+    response = client.chat.completions.create(
+        model="openai/gpt-oss-120b",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7
+    )
+    return response.choices[0].message.content.strip()
 
-@app.route('/job/<int:job_id>')
-def job_detail(job_id):
-    conn = get_db()
-    job = conn.execute(
-        'SELECT * FROM job_postings WHERE id = ? AND is_active = 1 AND archived_at IS NULL', (job_id,)
-    ).fetchone()
-    conn.close()
 
-    if not job:
-        return "Job not found", 404
+# ── Poster layout (pixel boxes measured on static/ad_template.png, 1121x1403) ──
+NAVY = (10, 40, 90)
+BAR_GOLD = (255, 214, 66)
+TEXT_GRAY = (45, 55, 75)
 
-    required_docs = json.loads(job['required_documents']) if job['required_documents'] else []
-    return render_template('applicant/job_detail.html', job=job, required_docs=required_docs)
+TITLE_BOX = (60, 422, 1060, 528)      # navy bar: position title
+DETAIL_BOX = (70, 580, 1050, 1090)    # white box: qualifications
 
-@app.route('/apply/<int:job_id>', methods=['GET', 'POST'])
-def apply(job_id):
-    conn = get_db()
-    job = conn.execute(
-        'SELECT * FROM job_postings WHERE id = ? AND is_active = 1 AND archived_at IS NULL', (job_id,)
-    ).fetchone()
-    conn.close()
 
-    if not job:
-        return "Job not found", 404
+PH_TZ = timezone(timedelta(hours=8))   # Vercel runs in UTC; posters use Philippine time
+DATE_RIGHT_X = 1086                    # right edge of the "Posting as of" line
+DATE_BASELINE_Y = 52
 
-    required_docs = json.loads(job['required_documents']) if job['required_documents'] else []
+def _posting_date(job):
+    """Date the job was posted (created_at), falling back to today (PH time)."""
+    d = job.get("created_at")
+    if isinstance(d, str):
+        try:
+            d = datetime.fromisoformat(d.replace("Z", "+00:00")[:26])
+        except ValueError:
+            d = None
+    if not isinstance(d, datetime):
+        d = datetime.now(PH_TZ)
+    return d.strftime("%B %d, %Y").upper().replace(" 0", " ")
 
-    if request.method == 'POST':
-        full_name = request.form['full_name']
-        email = request.form['email']
-        phone = request.form['phone']
+def _draw_posting_date(draw, job):
+    date_text = _posting_date(job)
+    label = "Posting as of "
+    for size in (26, 24, 22, 20):
+        date_font = get_font(size, bold=True)
+        label_font = get_font(size - 5)
+        total = draw.textlength(label, font=label_font) + draw.textlength(date_text, font=date_font)
+        if total <= 400:
+            break
+    x = DATE_RIGHT_X - total
+    draw.text((x, DATE_BASELINE_Y), label, fill=(255, 255, 255), font=label_font, anchor="ls")
+    draw.text((x + draw.textlength(label, font=label_font), DATE_BASELINE_Y), date_text,
+              fill=(255, 214, 66), font=date_font, anchor="ls")
 
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO applicants (job_id, full_name, email, phone)
-            VALUES (?, ?, ?, ?)
-        ''', (job_id, full_name, email, phone))
-        applicant_id = cursor.lastrowid
-
-        for doc_type in required_docs:
-            field_name = doc_type.replace(' ', '_').lower()
-            files = request.files.getlist(field_name)
-            for file in files:
-                if file and file.filename:
-                    filename = f"{field_name}_{file.filename}"
-                    cloud_url = upload_file(file, folder=f"applicant_{applicant_id}")
-                    cursor.execute('''
-                        INSERT INTO applicant_documents
-                        (applicant_id, document_type, filename, filepath)
-                        VALUES (?, ?, ?, ?)
-                    ''', (applicant_id, doc_type, filename, cloud_url))
-
-        conn.commit()
-        conn.close()
-
-        return render_template('applicant/success.html', name=full_name, job=job)
-
-    return render_template('applicant/apply.html', job=job, required_docs=required_docs)
-
-# ─── ADMIN ROUTES ────────────────────────────────────────────────
-
-@app.route('/admin')
-def admin_home():
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    active_postings = conn.execute(
-        'SELECT * FROM job_postings WHERE archived_at IS NULL ORDER BY campus, title'
-    ).fetchall()
-    archived_postings = conn.execute(
-        'SELECT * FROM job_postings WHERE archived_at IS NOT NULL ORDER BY archived_at DESC'
-    ).fetchall()
-    conn.close()
-
-    active_by_campus = {}
-    for campus in CAMPUSES:
-        active_by_campus[campus] = [p for p in active_postings if p['campus'] == campus]
-
-    return render_template('admin/dashboard.html',
-                           jobs_by_campus=active_by_campus,
-                           archived_jobs=archived_postings,
-                           campuses=CAMPUSES)
-
-@app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-
-        conn = get_db()
-        user = conn.execute(
-            'SELECT * FROM admin_users WHERE username = ? AND password = ?',
-            (username, password)
-        ).fetchone()
-        conn.close()
-
-        if user:
-            session['admin'] = username
-            return redirect(url_for('admin_home'))
+def _wrap(draw, text, font, max_width):
+    words = str(text).split()
+    lines, cur = [], ""
+    for w in words:
+        test = (cur + " " + w).strip()
+        if draw.textlength(test, font=font) <= max_width:
+            cur = test
         else:
-            flash('Invalid username or password')
-
-    return render_template('admin/login.html')
-
-@app.route('/admin/logout')
-def admin_logout():
-    session.pop('admin', None)
-    return redirect(url_for('admin_login'))
-
-@app.route('/admin/job/new', methods=['GET', 'POST'])
-def admin_new_job():
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    if request.method == 'POST':
-        required_docs = request.form.getlist('required_documents')
-
-        mandatory = []
-        if 'mandatory_skills' in request.form: mandatory.append('skills')
-        if 'mandatory_experience' in request.form: mandatory.append('experience')
-        if 'mandatory_education' in request.form: mandatory.append('education')
-        if 'mandatory_other' in request.form: mandatory.append('other')
-
-        conn = get_db()
-        conn.execute('''
-            INSERT INTO job_postings
-            (campus, title, description, skills, experience,
-             education, other_requirements, required_documents, mandatory_requirements)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            request.form['campus'],
-            request.form['title'],
-            request.form['description'],
-            request.form['skills'],
-            request.form['experience'],
-            request.form['education'],
-            request.form['other_requirements'],
-            json.dumps(required_docs),
-            json.dumps(mandatory)
-        ))
-        conn.commit()
-        conn.close()
-        flash('Job posting created successfully!')
-        return redirect(url_for('admin_home'))
-
-    return render_template('admin/job_form.html', job=None, campuses=CAMPUSES, mandatory=[])
-
-@app.route('/admin/job/<int:job_id>/edit', methods=['GET', 'POST'])
-def admin_edit_job(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
-    conn.close()
-
-    if not job:
-        return "Job not found", 404
-
-    if request.method == 'POST':
-        required_docs = request.form.getlist('required_documents')
-
-        mandatory = []
-        if 'mandatory_skills' in request.form: mandatory.append('skills')
-        if 'mandatory_experience' in request.form: mandatory.append('experience')
-        if 'mandatory_education' in request.form: mandatory.append('education')
-        if 'mandatory_other' in request.form: mandatory.append('other')
-
-        conn = get_db()
-        conn.execute('''
-            UPDATE job_postings SET
-            campus=?, title=?, description=?, skills=?,
-            experience=?, education=?, other_requirements=?,
-            required_documents=?, mandatory_requirements=?, is_active=?
-            WHERE id=?
-        ''', (
-            request.form['campus'],
-            request.form['title'],
-            request.form['description'],
-            request.form['skills'],
-            request.form['experience'],
-            request.form['education'],
-            request.form['other_requirements'],
-            json.dumps(required_docs),
-            json.dumps(mandatory),
-            1 if 'is_active' in request.form else 0,
-            job_id
-        ))
-        conn.commit()
-        conn.close()
-        flash('Job posting updated successfully!')
-        return redirect(url_for('admin_home'))
-
-    required_docs = json.loads(job['required_documents']) if job['required_documents'] else []
-    mandatory = json.loads(job['mandatory_requirements']) if job['mandatory_requirements'] else []
-    return render_template('admin/job_form.html', job=job, required_docs=required_docs,
-                           mandatory=mandatory, campuses=CAMPUSES)
-
-@app.route('/admin/job/<int:job_id>/delete', methods=['POST'])
-def admin_delete_job(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
-
-    if not job:
-        conn.close()
-        return "Job not found", 404
-
-    if job['archived_at']:
-        archived_date = datetime.fromisoformat(str(job['archived_at']))
-        six_months_ago = datetime.now() - timedelta(days=180)
-
-        if archived_date > six_months_ago:
-            flash('Job posting cannot be permanently deleted until 6 months after archiving.')
-            conn.close()
-            return redirect(url_for('admin_home'))
-        else:
-            conn.execute('DELETE FROM job_postings WHERE id = ?', (job_id,))
-            conn.commit()
-            conn.close()
-            flash('Job posting permanently deleted.')
-            return redirect(url_for('admin_home'))
-    else:
-        conn.execute(
-            'UPDATE job_postings SET archived_at = ? WHERE id = ?',
-            (datetime.now().isoformat(), job_id)
-        )
-        conn.commit()
-        conn.close()
-        flash('Job posting archived.')
-        return redirect(url_for('admin_home'))
-
-@app.route('/admin/job/<int:job_id>/restore', methods=['POST'])
-def admin_restore_job(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    conn.execute('UPDATE job_postings SET archived_at = NULL WHERE id = ?', (job_id,))
-    conn.commit()
-    conn.close()
-    flash('Job posting restored.')
-    return redirect(url_for('admin_home'))
-
-@app.route('/admin/job/<int:job_id>/applicants')
-def admin_applicants(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
-    applicants = conn.execute(
-        'SELECT * FROM applicants WHERE job_id = ? ORDER BY applied_at DESC', (job_id,)
-    ).fetchall()
-    conn.close()
-
-    return render_template('admin/applicants.html', job=job, applicants=applicants)
-
-def screen_one_applicant(conn, applicant, job_specs):
-    docs = conn.execute(
-        'SELECT * FROM applicant_documents WHERE applicant_id = ?',
-        (applicant['id'],)
-    ).fetchall()
-
-    documents_text = {}
-    for doc in docs:
-        text = extract_text_from_pdf(doc['filepath'])
-        if doc['document_type'] in documents_text:
-            documents_text[doc['document_type']] += "\n\n--- Additional document ---\n\n" + text
-        else:
-            documents_text[doc['document_type']] = text
-
-    result = screen_applicant(documents_text, job_specs)
-
-    auto_failed = result.get('auto_failed', False)
-    missing = result.get('missing', [])
-    unverified = result.get('unverified_claims', [])
-    combined = missing + [f"Unverified: {u}" for u in unverified]
-    strengths = result.get('strengths', [])
-    weaknesses = result.get('weaknesses', [])
-
-    final_qualified = result['qualified'] and not auto_failed
-
-    conn.execute('''
-        UPDATE applicants SET
-        screening_score = ?,
-        screening_result = ?,
-        screening_reason = ?,
-        screening_missing = ?,
-        screening_strengths = ?,
-        screening_weaknesses = ?,
-        is_screened = 1
-        WHERE id = ?
-    ''', (
-        result['score'],
-        'qualified' if final_qualified else 'unqualified',
-        result['reason'],
-        json.dumps(combined),
-        json.dumps(strengths),
-        json.dumps(weaknesses),
-        applicant['id']
-    ))
-    conn.commit()
-
-def build_job_specs(job):
-    mandatory = json.loads(job['mandatory_requirements']) if job['mandatory_requirements'] else []
-    return {
-        'title': job['title'],
-        'campus': job['campus'],
-        'skills': job['skills'],
-        'experience': job['experience'],
-        'education': job['education'],
-        'other_requirements': job['other_requirements'],
-        'mandatory_requirements': mandatory
-    }
-
-@app.route('/admin/job/<int:job_id>/screen')
-def admin_screen(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
-    applicants = conn.execute(
-        'SELECT * FROM applicants WHERE job_id = ? AND is_screened = 0', (job_id,)
-    ).fetchall()
-
-    job_specs = build_job_specs(job)
-
-    for applicant in applicants:
-        screen_one_applicant(conn, applicant, job_specs)
-
-    conn.close()
-    flash('Screening complete!')
-    return redirect(url_for('admin_applicants', job_id=job_id))
-
-@app.route('/admin/job/<int:job_id>/rescreen-all')
-def admin_rescreen_all(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
-    applicants = conn.execute(
-        'SELECT * FROM applicants WHERE job_id = ?', (job_id,)
-    ).fetchall()
-
-    job_specs = build_job_specs(job)
-
-    for applicant in applicants:
-        screen_one_applicant(conn, applicant, job_specs)
-
-    conn.close()
-    flash('All applicants re-screened!')
-    return redirect(url_for('admin_applicants', job_id=job_id))
-
-@app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/rescreen')
-def admin_rescreen_one(job_id, applicant_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
-    applicant = conn.execute(
-        'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
-    ).fetchone()
-
-    if not job or not applicant:
-        conn.close()
-        return "Not found", 404
-
-    job_specs = build_job_specs(job)
-    screen_one_applicant(conn, applicant, job_specs)
-    conn.close()
-
-    flash('Applicant re-screened!')
-    return redirect(url_for('admin_applicants', job_id=job_id))
-
-@app.route('/admin/job/<int:job_id>/generate-ad')
-def admin_generate_ad(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
-    conn.close()
-
-    if not job:
-        return "Job not found", 404
-
-    job = dict(job)
-    filepath, filename = generate_job_ad(job)
-
-    return render_template('admin/ad_result.html',
-                           image=filename,
-                           job=job)
-
-@app.route('/admin/job/<int:job_id>/download/documents/<int:applicant_id>')
-def download_applicant_documents(job_id, applicant_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    import zipfile
-    from io import BytesIO
-
-    conn = get_db()
-    applicant = conn.execute('SELECT * FROM applicants WHERE id = ? AND job_id = ?',
-                            (applicant_id, job_id)).fetchone()
-    docs = conn.execute('SELECT * FROM applicant_documents WHERE applicant_id = ?',
-                       (applicant_id,)).fetchall()
-    conn.close()
-
-    if not applicant or not docs:
-        flash('No documents found for this applicant.')
-        return redirect(url_for('admin_applicants', job_id=job_id))
-
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for doc in docs:
-            try:
-                response = requests.get(doc['filepath'])
-                if response.status_code == 200:
-                    arcname = f"{applicant['full_name']}/{doc['filename']}"
-                    zip_file.writestr(arcname, response.content)
-            except Exception:
-                pass
-
-    zip_buffer.seek(0)
-    filename = f"{applicant['full_name'].replace(' ', '_')}_documents.zip"
-    return send_file(zip_buffer, mimetype='application/zip', as_attachment=True,
-                    download_name=filename)
-
-@app.route('/admin/job/<int:job_id>/download/all-documents')
-def download_all_documents(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    import zipfile
-    from io import BytesIO
-
-    conn = get_db()
-    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
-    applicants = conn.execute('SELECT * FROM applicants WHERE job_id = ?', (job_id,)).fetchall()
-    conn.close()
-
-    if not applicants:
-        flash('No applicants found.')
-        return redirect(url_for('admin_applicants', job_id=job_id))
-
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for applicant in applicants:
-            conn = get_db()
-            docs = conn.execute('SELECT * FROM applicant_documents WHERE applicant_id = ?',
-                               (applicant['id'],)).fetchall()
-            conn.close()
-
-            for doc in docs:
-                try:
-                    response = requests.get(doc['filepath'])
-                    if response.status_code == 200:
-                        arcname = f"{applicant['full_name']}/{doc['document_type']}/{doc['filename']}"
-                        zip_file.writestr(arcname, response.content)
-                except Exception:
-                    pass
-
-    zip_buffer.seek(0)
-    filename = f"{job['title'].replace(' ', '_')}_all_documents.zip"
-    return send_file(zip_buffer, mimetype='application/zip', as_attachment=True,
-                    download_name=filename)
-
-@app.route('/admin/job/<int:job_id>/download/qualified')
-def download_qualified(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    applicants = conn.execute(
-        "SELECT * FROM applicants WHERE job_id = ? AND screening_result = 'qualified'",
-        (job_id,)
-    ).fetchall()
-    conn.close()
-
-    applicants = [dict(a) for a in applicants]
-    buffer = export_qualified(applicants)
-
-    if not buffer:
-        flash('No qualified applicants to download.')
-        return redirect(url_for('admin_applicants', job_id=job_id))
-
-    return send_file(buffer, as_attachment=True, download_name="qualified_applicants.xlsx",
-                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-@app.route('/admin/job/<int:job_id>/download/all')
-def download_all(job_id):
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-
-    conn = get_db()
-    applicants = conn.execute(
-        'SELECT * FROM applicants WHERE job_id = ? AND is_screened = 1',
-        (job_id,)
-    ).fetchall()
-    conn.close()
-
-    applicants = [dict(a) for a in applicants]
-    buffer = export_all(applicants)
-
-    if not buffer:
-        flash('No screened applicants to download.')
-        return redirect(url_for('admin_applicants', job_id=job_id))
-
-    return send_file(buffer, as_attachment=True, download_name="all_applicants.xlsx",
-                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+            if cur:
+                lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines or [""]
+
+def _fit_title(draw, text, max_width, max_height):
+    """Largest bold size (<=64) where the title fits the bar in 1-2 lines."""
+    for size in range(64, 27, -2):
+        font = get_font(size, bold=True)
+        lines = _wrap(draw, text, font, max_width)
+        if len(lines) <= 2 and len(lines) * size * 1.15 <= max_height:
+            return font, lines, size
+    font = get_font(28, bold=True)
+    return font, _wrap(draw, text, font, max_width)[:2], 28
+
+def generate_job_ad_image(job):
+    """Render the BulSU 'We Are Hiring' poster fully in memory.
+    Returns a BytesIO PNG. Nothing is written to disk (Vercel is read-only)."""
+    img = Image.open(TEMPLATE_PATH).convert("RGB")
+    draw = ImageDraw.Draw(img)
+
+    _draw_posting_date(draw, job)
+
+    # ── Position title + campus inside the gold-bordered bar ──
+    x0, y0, x1, y1 = TITLE_BOX
+    campus_font = get_font(26)
+    campus = job.get("campus") or ""
+    campus_h = 34 if campus else 0
+    font, lines, size = _fit_title(draw, job["title"], x1 - x0 - 40, (y1 - y0) - campus_h - 8)
+    block_h = int(len(lines) * size * 1.15) + campus_h
+    y = y0 + ((y1 - y0) - block_h) // 2
+    cx = (x0 + x1) // 2
+    for line in lines:
+        draw.text((cx, y), line, fill=(255, 255, 255), font=font, anchor="ma")
+        y += int(size * 1.15)
+    if campus:
+        draw.text((cx, y + 4), campus, fill=BAR_GOLD, font=campus_font, anchor="ma")
+
+    # ── Qualifications inside the white box ──
+    bx0, by0, bx1, by1 = DETAIL_BOX
+    label_font = get_font(30, bold=True)
+    value_font = get_font(30)
+    head_font = get_font(38, bold=True)
+    value_x = bx0 + 270
+    max_w = bx1 - value_x - 10
+
+    y = by0 + 10
+    draw.text((bx0, y), "QUALIFICATIONS", fill=NAVY, font=head_font)
+    y += 62
+    draw.rectangle([bx0, y - 8, bx0 + 120, y - 4], fill=BAR_GOLD)
+    y += 18
+
+    rows = [
+        ("Education", job.get("education")),
+        ("Experience", job.get("experience") or "None required"),
+        ("Training", job.get("skills") or "None required"),
+        ("Eligibility", job.get("other_requirements")),
+    ]
+    for label, value in rows:
+        if not value:
+            continue
+        lines = _wrap(draw, value, value_font, max_w)
+        if y + len(lines) * 42 > by1:
+            break
+        draw.text((bx0, y), label + ":", fill=NAVY, font=label_font)
+        for line in lines:
+            draw.text((value_x, y), line, fill=TEXT_GRAY, font=value_font)
+            y += 42
+        y += 22
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    buf.seek(0)
+    return buf
