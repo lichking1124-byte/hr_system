@@ -79,8 +79,12 @@ def init_db():
             mandatory_requirements TEXT,
             is_active INTEGER DEFAULT 1,
             archived_at TEXT,
+            deadline DATE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    ''')
+    cursor.execute('''
+        ALTER TABLE job_postings ADD COLUMN IF NOT EXISTS deadline DATE
     ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS applicants (
@@ -97,8 +101,14 @@ def init_db():
             screening_strengths TEXT,
             screening_weaknesses TEXT,
             is_screened INTEGER DEFAULT 0,
+            control_number TEXT,
             FOREIGN KEY (job_id) REFERENCES job_postings(id)
         )
+    ''')
+    # The applicants table already exists on Supabase, so CREATE TABLE IF NOT
+    # EXISTS above won't add new columns to it — do that explicitly here.
+    cursor.execute('''
+        ALTER TABLE applicants ADD COLUMN IF NOT EXISTS control_number TEXT
     ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS applicant_documents (

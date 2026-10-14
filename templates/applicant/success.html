@@ -14,6 +14,15 @@
         Your application for <strong>{{ job.title }}</strong> at
         <strong>{{ job.campus }}</strong> has been received.
     </p>
+    <div style="max-width:420px; margin:0 auto 25px; padding:18px; border:2px dashed var(--plum); border-radius:10px; background:#fdf8f8;">
+        <div style="font-size:13px; color:#888; text-transform:uppercase; letter-spacing:0.5px;">Your Control Number</div>
+        <div style="font-size:26px; font-weight:700; color:var(--plum); letter-spacing:1px; margin-top:4px;">
+            {{ control_number }}
+        </div>
+        <div style="font-size:13px; color:#888; margin-top:6px;">
+            Save this — you'll need it to follow up on your application.
+        </div>
+    </div>
     <div class="alert alert-info" style="max-width:550px; margin:0 auto 30px; text-align:left;">
         📧 The HR office will review your documents and contact you at your provided email regarding the next steps.
     </div>

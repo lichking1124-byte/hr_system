@@ -89,6 +89,13 @@
             <input name="title" placeholder="e.g. Administrative Officer"
                    value="{{ job.title if job else '' }}" required>
 
+            <label>Application Deadline</label>
+            <input type="date" name="deadline"
+                   value="{{ job.deadline if job and job.deadline else '' }}">
+            <div style="font-size:12px; color:#888; margin-top:4px;">
+                Shown on the job ad poster. Leave blank to show "To be announced".
+            </div>
+
             <label>Job Description</label>
             <textarea name="description"
                       placeholder="Describe the role and responsibilities...">{{ job.description if job else '' }}</textarea>

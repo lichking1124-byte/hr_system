@@ -78,6 +78,14 @@ def apply(job_id):
         ''', (job_id, full_name, email, phone))
         applicant_id = cursor.lastrowid
 
+        # Control number: unique, human-readable reference the applicant can
+        # quote when following up (and later, for status lookups).
+        control_number = f"BULSU-{datetime.now().year}-{applicant_id:05d}"
+        cursor.execute(
+            'UPDATE applicants SET control_number = ? WHERE id = ?',
+            (control_number, applicant_id)
+        )
+
         for doc_type in required_docs:
             field_name = doc_type.replace(' ', '_').lower()
             files = request.files.getlist(field_name)
@@ -94,7 +102,8 @@ def apply(job_id):
         conn.commit()
         conn.close()
 
-        return render_template('applicant/success.html', name=full_name, job=job)
+        return render_template('applicant/success.html', name=full_name, job=job,
+                               control_number=control_number)
 
     return render_template('applicant/apply.html', job=job, required_docs=required_docs)
 
@@ -167,8 +176,9 @@ def admin_new_job():
         conn.execute('''
             INSERT INTO job_postings
             (campus, title, description, skills, experience,
-             education, other_requirements, required_documents, mandatory_requirements)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             education, other_requirements, required_documents, mandatory_requirements,
+             deadline)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             request.form['campus'],
             request.form['title'],
@@ -178,7 +188,8 @@ def admin_new_job():
             request.form['education'],
             request.form['other_requirements'],
             json.dumps(required_docs),
-            json.dumps(mandatory)
+            json.dumps(mandatory),
+            request.form.get('deadline') or None
         ))
         conn.commit()
         conn.close()
@@ -213,7 +224,8 @@ def admin_edit_job(job_id):
             UPDATE job_postings SET
             campus=?, title=?, description=?, skills=?,
             experience=?, education=?, other_requirements=?,
-            required_documents=?, mandatory_requirements=?, is_active=?
+            required_documents=?, mandatory_requirements=?, is_active=?,
+            deadline=?
             WHERE id=?
         ''', (
             request.form['campus'],
@@ -226,6 +238,7 @@ def admin_edit_job(job_id):
             json.dumps(required_docs),
             json.dumps(mandatory),
             1 if 'is_active' in request.form else 0,
+            request.form.get('deadline') or None,
             job_id
         ))
         conn.commit()
