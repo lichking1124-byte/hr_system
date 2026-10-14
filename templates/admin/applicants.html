@@ -2,13 +2,8 @@
 {% block title %}Applicants — {{ job.title }}{% endblock %}
 
 {% block navbar %}
-<nav class="navbar">
-    <a href="/" class="logo">BulSU <span>HR Portal</span></a>
-    <div>
-        <a href="/admin">Dashboard</a>
-        <a href="/admin/logout">Logout</a>
-    </div>
-</nav>
+{% from '_header.html' import site_header with context %}
+{{ site_header([('/admin', 'Dashboard'), ('/admin/logout', 'Logout')]) }}
 {% endblock %}
 
 {% block extra_style %}

@@ -2,81 +2,162 @@
 {% block title %}BulSU HR Portal — Job Openings{% endblock %}
 
 {% block extra_style %}
+/* ── Hero ── */
 .hero {
-    background: var(--plum);
-    color: var(--white);
-    padding: 50px 40px;
-    border-radius: 10px;
-    margin-bottom: 30px;
-    text-align: center;
-    border-bottom: 5px solid var(--gold);
     position: relative;
+    background:
+        radial-gradient(ellipse at 50% 0%, rgba(228,185,74,0.18), transparent 60%),
+        linear-gradient(180deg, var(--plum) 0%, var(--plum-dark) 100%);
+    color: var(--white);
+    text-align: center;
+    padding: 72px 24px 64px;
     overflow: hidden;
 }
-.hero h1 { font-size: 32px; margin-bottom: 10px; }
+.hero::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: url('/static/bulsu_seal.png') no-repeat center 40% / 520px;
+    opacity: 0.05;
+}
+.hero-inner { position: relative; max-width: 780px; margin: 0 auto; }
+.hero-tag {
+    display: inline-block;
+    background: rgba(201,162,39,0.2);
+    border: 1px solid rgba(201,162,39,0.5);
+    border-radius: 4px;
+    padding: 6px 16px;
+    margin-bottom: 24px;
+    color: var(--gold-light);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+.hero h1 { font-size: clamp(34px, 6vw, 56px); line-height: 1.12; margin-bottom: 20px; }
 .hero h1 span { color: var(--gold); }
-.hero p { font-size: 15px; opacity: 0.85; }
-.campus-section { margin-bottom: 30px; }
-.campus-title {
-    font-size: 18px;
-    font-weight: bold;
-    color: var(--plum);
-    padding: 10px 15px;
-    border-left: 5px solid var(--gold);
-    background: white;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    box-shadow: 0 2px 6px rgba(103,30,30,0.08);
-}
-.job-card {
-    background: white;
+.hero p.lead { color: var(--gold-pale); font-size: 18px; line-height: 1.65; max-width: 640px; margin: 0 auto 32px; }
+.hero-stats { display: flex; flex-wrap: wrap; gap: 28px 48px; justify-content: center; margin-bottom: 32px; }
+.hero-stat .num { font-family: var(--font-display); color: var(--gold); font-size: 34px; font-weight: 700; line-height: 1.1; }
+.hero-stat .lbl { color: var(--gold-pale); font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; margin-top: 4px; }
+.hero .btn-gold { padding: 14px 32px; font-size: 16px; font-weight: 700; }
+.hero-stripe { height: 8px; background: var(--gold); }
+
+/* ── Section heading ── */
+.eyebrow { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.eyebrow i { display: block; width: 32px; height: 2px; background: var(--gold); }
+.eyebrow span { color: var(--plum); font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 500; }
+.section-head { font-family: var(--font-display); color: var(--plum-dark); font-size: 30px; font-weight: 700; margin-bottom: 28px; }
+
+/* ── Campus cards ── */
+.campus-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+@media (max-width: 960px) { .campus-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .campus-grid { grid-template-columns: 1fr; } }
+.campus-card {
+    background: #fff;
+    border: 1px solid var(--line);
     border-radius: 8px;
-    padding: 18px 20px;
-    margin-bottom: 10px;
-    box-shadow: 0 2px 8px rgba(103,30,30,0.07);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-left: 4px solid var(--plum);
-    transition: transform 0.15s, box-shadow 0.15s;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(90,12,14,0.07);
+    display: flex; flex-direction: column;
+    transition: box-shadow 0.2s, border-color 0.2s;
 }
-.job-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 14px rgba(103,30,30,0.13);
-    border-left-color: var(--gold-dark);
+.campus-card:hover { box-shadow: 0 6px 18px rgba(90,12,14,0.12); border-color: var(--gold); }
+.campus-media {
+    position: relative; height: 170px; background: #f0ebe0;
+    display: flex; align-items: center; justify-content: center;
 }
-.job-title { font-size: 16px; font-weight: bold; color: var(--plum); }
-.job-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
-.no-jobs { color: #bbb; font-size: 14px; padding: 10px 15px; }
+.campus-media img { height: 128px; width: 128px; object-fit: contain; filter: drop-shadow(0 3px 5px rgba(0,0,0,0.25)); transition: transform 0.4s; }
+.campus-card:hover .campus-media img { transform: scale(1.06); }
+.slots {
+    position: absolute; right: 12px; bottom: 8px;
+    background: var(--gold); color: var(--plum-dark);
+    font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+    padding: 2px 10px; border-radius: 4px;
+}
+.slots.none { background: #e5e0d6; color: #7a7366; }
+.campus-body { padding: 20px 22px 22px; display: flex; flex-direction: column; flex: 1; }
+.campus-label { color: var(--plum-light); font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 4px; }
+.campus-name { font-family: var(--font-display); color: var(--plum-dark); font-size: 19px; font-weight: 700; margin-bottom: 2px; }
+.campus-city { color: #6b7280; font-size: 14px; margin-bottom: 16px; }
+.job-link {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    text-decoration: none;
+    background: #FFFDE7; border-left: 4px solid var(--gold);
+    padding: 10px 14px; margin-bottom: 8px; border-radius: 0 4px 4px 0;
+    color: var(--plum-dark); font-size: 14px; font-weight: 600;
+    transition: background 0.15s;
+}
+.job-link:hover { background: var(--gold-pale); }
+.job-link small { display: block; font-weight: 400; color: #6b7280; font-size: 12px; margin-top: 2px; }
+.job-link .go { color: var(--plum); font-weight: 700; flex-shrink: 0; }
+.no-jobs { color: #9ca3af; font-size: 14px; padding: 6px 0; }
+{% endblock %}
+
+{% block hero %}
+{% set total_jobs = jobs_by_campus.values() | map('length') | sum %}
+<section class="hero">
+    <div class="hero-inner">
+        <div class="hero-tag">Now Hiring · BulSU Careers</div>
+        <h1>Join Our Academic<br><span>Family of Scholars</span></h1>
+        <p class="lead">
+            Bulacan State University invites qualified individuals to apply for open positions
+            across our campuses in the Province of Bulacan. Shape the future of education with a
+            community dedicated to excellence and service.
+        </p>
+        <div class="hero-stats">
+            <div class="hero-stat"><div class="num">{{ jobs_by_campus | length }}</div><div class="lbl">Campuses</div></div>
+            <div class="hero-stat"><div class="num">{{ total_jobs }}</div><div class="lbl">Open Positions</div></div>
+            <div class="hero-stat"><div class="num">1904</div><div class="lbl">Est. Year</div></div>
+        </div>
+        <a href="#campuses" class="btn btn-gold">Browse Open Positions</a>
+    </div>
+</section>
+<div class="hero-stripe"></div>
 {% endblock %}
 
 {% block content %}
-<div class="hero">
-    <h1>Bulacan State <span>University</span></h1>
-    <p>Human Resource Management Office — Job Openings</p>
-    <p style="margin-top:8px; font-size:13px; opacity:0.7;">
-        Browse available positions across all campuses
-    </p>
-</div>
+{# campus string (as stored in config.CAMPUSES) -> (label, display name, city, image slug) #}
+{% set info = {
+    'Main Campus - Malolos': ('Main Campus', 'Malolos Campus', 'City of Malolos, Bulacan', 'malolos'),
+    'Bustos Campus': ('Campus', 'Bustos Campus', 'Bustos, Bulacan', 'bustos'),
+    'Sarmiento Campus - San Jose Del Monte': ('Campus', 'Sarmiento Campus', 'San Jose del Monte, Bulacan', 'sarmiento'),
+    'Meneses Campus - Bulakan': ('Campus', 'Meneses Campus', 'Bulakan, Bulacan', 'meneses'),
+    'Hagonoy Campus': ('Campus', 'Hagonoy Campus', 'Hagonoy, Bulacan', 'hagonoy'),
+    'San Rafael Campus': ('Campus', 'San Rafael Campus', 'San Rafael, Bulacan', 'sanrafael')
+} %}
 
-{% for campus, jobs in jobs_by_campus.items() %}
-<div class="campus-section">
-    <div class="campus-title">📍 {{ campus }}</div>
-    {% if jobs %}
-        {% for job in jobs %}
-        <div class="job-card">
-            <div>
-                <div class="job-title">{{ job.title }}</div>
-                <div class="job-meta">
-                    🎓 {{ job.education }} &nbsp;|&nbsp; 💼 {{ job.experience }}
-                </div>
-            </div>
-            <a href="/job/{{ job.id }}" class="btn btn-primary">View Details</a>
+<div id="campuses" class="eyebrow"><i></i><span>Select a Campus</span></div>
+<h2 class="section-head">BulSU Campuses &amp; Open Positions</h2>
+
+<div class="campus-grid">
+    {% for campus, jobs in jobs_by_campus.items() %}
+    {% set c = info.get(campus, ('Campus', campus, 'Bulacan', 'default')) %}
+    <div class="campus-card">
+        <div class="campus-media">
+            <img src="/static/campus/{{ c[3] }}.png" alt="{{ c[1] }}"
+                 onerror="this.onerror=null; this.src='/static/bulsu_seal.png';">
+            <span class="slots {% if not jobs %}none{% endif %}">
+                {{ jobs | length }} Open Position{{ '' if jobs | length == 1 else 's' }}
+            </span>
         </div>
-        {% endfor %}
-    {% else %}
-        <p class="no-jobs">No current openings for this campus.</p>
-    {% endif %}
+        <div class="campus-body">
+            <div class="campus-label">{{ c[0] }}</div>
+            <div class="campus-name">{{ c[1] }}</div>
+            <div class="campus-city">{{ c[2] }}</div>
+            {% if jobs %}
+                {% for job in jobs %}
+                <a href="/job/{{ job.id }}" class="job-link">
+                    <span>{{ job.title }}
+                        {% if job.education %}<small>🎓 {{ job.education }}</small>{% endif %}
+                    </span>
+                    <span class="go">→</span>
+                </a>
+                {% endfor %}
+            {% else %}
+                <p class="no-jobs">No current openings for this campus.</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
 </div>
-{% endfor %}
 {% endblock %}

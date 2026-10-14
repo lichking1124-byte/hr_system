@@ -1,0 +1,24 @@
+{# Shared site header (top banner + maroon header). Usage in a template:
+   {% from '_header.html' import site_header with context %}
+   {{ site_header([('/', 'Job Openings'), ('/admin', 'Admin')]) }} #}
+{% macro site_header(links) %}
+<div class="topbar">
+    <span>Republic of the Philippines</span>
+    <span class="topbar-mid">Official BulSU Human Resources Portal</span>
+    <span>Bulacan State University</span>
+</div>
+<header class="navbar">
+    <a href="/" class="brand">
+        <span class="seal"><img src="/static/bulsu_seal.png" alt="BulSU Seal"></span>
+        <span class="brand-text">
+            <span class="brand-name">Bulacan State University</span>
+            <span class="brand-sub">Human Resources Management Office</span>
+        </span>
+    </a>
+    <nav class="nav-links">
+        {% for href, label in links %}
+        <a href="{{ href }}" class="{% if request.path == href %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </nav>
+</header>
+{% endmacro %}

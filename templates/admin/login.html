@@ -2,42 +2,58 @@
 {% block title %}Admin Login — BulSU HR Portal{% endblock %}
 
 {% block navbar %}
-<nav class="navbar">
-    <a href="/" class="logo">BulSU <span>HR Portal</span></a>
-</nav>
+{% from '_header.html' import site_header with context %}
+{{ site_header([('/', 'Job Openings')]) }}
+{% endblock %}
+
+{% block flashes %}{% endblock %}
+
+{% block extra_style %}
+.login-wrap { max-width: 440px; margin: 40px auto; }
+.login-card { background: #fff; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(90,12,14,0.07); }
+.login-top { background: var(--plum); text-align: center; padding: 32px 32px 28px; }
+.login-top .seal { width: 68px; height: 68px; margin: 0 auto 12px; }
+.login-top h2 { color: #fff; font-size: 26px; font-weight: 700; }
+.login-top p { color: var(--gold-light); font-size: 14px; margin-top: 4px; }
+.login-stripe { height: 6px; background: var(--gold); }
+.login-body { padding: 8px 32px 30px; }
+.login-body label { color: var(--plum-dark); font-weight: 600; }
 {% endblock %}
 
 {% block content %}
-<div style="max-width:420px; margin:60px auto;">
-    <div class="card">
-        <div style="text-align:center; margin-bottom:25px;">
-            <div style="font-size:52px;">🔐</div>
-            <h2 style="color:var(--plum); margin-top:10px; font-size:22px;">Admin Login</h2>
-            <p style="color:var(--text-muted); font-size:14px; margin-top:5px;">
-                Bulacan State University — HR Management Office
-            </p>
+<div class="login-wrap">
+    <div class="login-card">
+        <div class="login-top">
+            <div class="seal"><img src="/static/bulsu_seal.png" alt="BulSU Seal"></div>
+            <h2>Administrator Login</h2>
+            <p>HRMO Portal — Restricted Access</p>
         </div>
+        <div class="login-stripe"></div>
+        <div class="login-body">
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    {% for message in messages %}
+                    <div class="alert alert-danger" style="margin-top:20px;">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
 
-        {% with messages = get_flashed_messages() %}
-            {% if messages %}
-                {% for message in messages %}
-                <div class="alert alert-danger">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+            <form method="POST">
+                <label>Username</label>
+                <input name="username" placeholder="Enter username" required>
 
-        <form method="POST">
-            <label>Username</label>
-            <input name="username" placeholder="Enter username" required>
+                <label>Password</label>
+                <input name="password" type="password" placeholder="Enter password" required>
 
-            <label>Password</label>
-            <input name="password" type="password" placeholder="Enter password" required>
-
-            <button type="submit" class="btn btn-primary"
-                    style="width:100%; padding:13px; font-size:16px; margin-top:20px;">
-                Login to Admin Panel
-            </button>
-        </form>
+                <button type="submit" class="btn btn-gold"
+                        style="width:100%; padding:13px; font-size:15px; margin-top:24px;">
+                    Sign In
+                </button>
+                <a href="/" style="display:block; text-align:center; margin-top:16px; color:var(--plum); font-size:14px; font-weight:500; text-decoration:none;">
+                    ← Back to Portal
+                </a>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}
