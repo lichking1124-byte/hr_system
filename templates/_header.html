@@ -2,6 +2,9 @@
    {% from '_header.html' import site_header with context %}
    {{ site_header([('/', 'Job Openings'), ('/admin', 'Admin')]) }} #}
 {% macro site_header(links) %}
+{% set in_admin = request.path.startswith('/admin') and request.path != '/admin/login' and session.get('admin') %}
+{% set role = session.get('role') %}
+{% set hrmo_only_links = ['/admin/job/new'] %}
 <div class="topbar">
     <span>Republic of the Philippines</span>
     <span class="topbar-mid">Official BulSU Human Resources Portal</span>
@@ -17,8 +20,19 @@
     </a>
     <nav class="nav-links">
         {% for href, label in links %}
+        {% if href == '/admin/logout' and in_admin and role == 'hrmo' %}
+        <a href="/admin/users" class="{% if request.path == '/admin/users' %}active{% endif %}">Users</a>
+        <a href="/admin/audit" class="{% if request.path == '/admin/audit' %}active{% endif %}">Audit Log</a>
+        {% endif %}
+        {% if not (in_admin and role != 'hrmo' and href in hrmo_only_links) %}
         <a href="{{ href }}" class="{% if request.path == href %}active{% endif %}">{{ label }}</a>
+        {% endif %}
         {% endfor %}
+        {% if in_admin %}
+        <a href="/admin/account" class="nav-outline {% if request.path == '/admin/account' %}active{% endif %}" title="My account">
+            👤 {{ session.get('admin') }} · {{ 'HRMO' if role == 'hrmo' else 'HRMPSB' }}
+        </a>
+        {% endif %}
     </nav>
 </header>
 {% endmacro %}

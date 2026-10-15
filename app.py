@@ -10,6 +10,9 @@ from exporter import export_qualified, export_all
 from ad_generator import generate_job_ad_image
 from cloudinary_uploader import upload_file
 from config import SECRET_KEY, CAMPUSES
+from auth import init_auth, log_action, is_locked_out, utcnow, LOCKOUT_MINUTES
+from accounts import accounts
+from passwords import verify_password
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -21,6 +24,8 @@ except OSError:
     pass
 
 init_db()
+init_auth(app)
+app.register_blueprint(accounts)
 
 # ─── APPLICANT ROUTES ────────────────────────────────────────────
 
@@ -101,6 +106,8 @@ def apply(job_id):
 
         conn.commit()
         conn.close()
+        log_action('application.submit', 'applicant', applicant_id,
+                   f'job_id={job_id}', username='(applicant)', role='applicant')
 
         return render_template('applicant/success.html', name=full_name, job=job,
                                control_number=control_number)
@@ -135,27 +142,46 @@ def admin_home():
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        if username and is_locked_out(username):
+            log_action('auth.login_blocked', username=username[:50], role='')
+            flash(f'Too many failed attempts. Please try again in {LOCKOUT_MINUTES} minutes.')
+            return render_template('admin/login.html')
 
         conn = get_db()
         user = conn.execute(
-            'SELECT * FROM admin_users WHERE username = ? AND password = ?',
-            (username, password)
+            'SELECT * FROM admin_users WHERE LOWER(username) = LOWER(?)', (username,)
         ).fetchone()
-        conn.close()
+        ok = verify_password(password, user['password'] if user else None)
 
-        if user:
-            session['admin'] = username
+        if user and ok and user['is_active']:
+            conn.execute('UPDATE admin_users SET last_login = ? WHERE id = ?',
+                         (utcnow(), user['id']))
+            conn.commit()
+            conn.close()
+            session.clear()
+            session.permanent = True
+            session['admin'] = user['username']
+            session['user_id'] = user['id']
+            session['role'] = user['role']
+            log_action('auth.login', 'user', user['username'])
+            if user['must_change_password']:
+                flash('Please set a new password to continue.')
+                return redirect(url_for('accounts.account'))
             return redirect(url_for('admin_home'))
-        else:
-            flash('Invalid username or password')
+
+        conn.close()
+        log_action('auth.login_failed', username=username[:50], role='')
+        flash('Invalid username or password')
 
     return render_template('admin/login.html')
 
 @app.route('/admin/logout')
 def admin_logout():
-    session.pop('admin', None)
+    log_action('auth.logout')
+    session.clear()
     return redirect(url_for('admin_login'))
 
 @app.route('/admin/job/new', methods=['GET', 'POST'])

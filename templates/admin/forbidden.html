@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Access Denied — BulSU HR Portal{% endblock %}
+{% block navbar %}
+{% from '_header.html' import site_header with context %}
+{{ site_header([('/admin', 'Dashboard'), ('/admin/logout', 'Logout')]) }}
+{% endblock %}
+{% block content %}
+<div class="card" style="text-align:center; max-width:560px; margin:40px auto;">
+    <div style="font-size:42px;">🔒</div>
+    <h2 style="color:var(--plum-dark); margin:10px 0 6px;">Access Denied</h2>
+    <p style="color:#666; margin-bottom:18px;">
+        Your role ({{ ROLES.get(session.get('role'), 'Unknown') }}) does not have permission to open this page.
+        This attempt has been recorded in the audit log.
+    </p>
+    <a href="/admin" class="btn btn-primary">← Back to Dashboard</a>
+</div>
+{% endblock %}

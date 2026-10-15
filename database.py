@@ -62,6 +62,32 @@ def get_db():
     return ConnectionWrapper(conn)
 
 
+def migrate_admin_accounts(cursor):
+    """Hash any legacy plain-text passwords and seed the first administrator.
+
+    - Accounts still using the old default password ('bulsu2026') are forced to
+      choose a new password at next login.
+    - Idempotent: safe to run on every startup."""
+    from passwords import hash_password, is_hashed, DEFAULT_SEED_PASSWORD
+
+    users = cursor.execute('SELECT id, username, password FROM admin_users').fetchall()
+    for u in users:
+        if not is_hashed(u['password']):
+            must_change = 1 if u['password'] == DEFAULT_SEED_PASSWORD else 0
+            cursor.execute(
+                'UPDATE admin_users SET password = %s, must_change_password = %s WHERE id = %s',
+                (hash_password(u['password']), must_change, u['id'])
+            )
+    if not users:
+        cursor.execute(
+            "INSERT INTO admin_users (username, password, role, full_name, must_change_password) "
+            "VALUES (%s, %s, 'hrmo', 'HRMO Administrator', 1)",
+            ('admin', hash_password(DEFAULT_SEED_PASSWORD))
+        )
+    cursor.execute("UPDATE admin_users SET role = 'hrmo' WHERE role IS NULL")
+    cursor.execute("UPDATE admin_users SET is_active = 1 WHERE is_active IS NULL")
+
+
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
@@ -129,9 +155,35 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    existing_admin = cursor.execute('SELECT * FROM admin_users WHERE username = %s', ('admin',)).fetchone()
-    if not existing_admin:
-        cursor.execute('INSERT INTO admin_users (username, password) VALUES (%s, %s)', ('admin', 'bulsu2026'))
+    # Role-based access control + account management columns
+    for ddl in (
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'hrmo'",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS full_name TEXT",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS must_change_password INTEGER DEFAULT 0",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP",
+        "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP",
+    ):
+        cursor.execute(ddl)
+
+    # Audit log (who did what, when, from where). Times are stored in UTC.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id SERIAL PRIMARY KEY,
+            username TEXT,
+            role TEXT,
+            action TEXT NOT NULL,
+            target_type TEXT,
+            target_id TEXT,
+            details TEXT,
+            ip_address TEXT,
+            created_at TIMESTAMP NOT NULL
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log (created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_action_user ON audit_log (action, username, created_at)")
+
+    migrate_admin_accounts(cursor)
     conn.commit()
     conn.close()
     print("Database initialized!")

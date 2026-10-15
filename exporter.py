@@ -1,5 +1,8 @@
 import pandas as pd
 from io import BytesIO
+from datetime import timedelta
+
+PH_OFFSET = timedelta(hours=8)   # database stores UTC
 
 
 def _fmt_timestamp(value):
@@ -8,7 +11,7 @@ def _fmt_timestamp(value):
     if not value:
         return ''
     if hasattr(value, 'strftime'):
-        return value.strftime('%b %d, %Y %I:%M %p')
+        return (value + PH_OFFSET).strftime('%b %d, %Y %I:%M %p')
     return str(value)
 
 

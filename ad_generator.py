@@ -95,7 +95,10 @@ def _fmt_date(d):
 
 def _posting_date(job):
     """Date the job was posted (created_at), falling back to today (PH time)."""
-    return _to_datetime(job.get("created_at")) or datetime.now(PH_TZ)
+    created = _to_datetime(job.get("created_at"))
+    if created is not None and created.tzinfo is None and isinstance(job.get("created_at"), (datetime, str)):
+        created = created + timedelta(hours=8)    # DB stores UTC; poster uses Philippine date
+    return created or datetime.now(PH_TZ)
 
 def _wrap(draw, text, font, max_width):
     lines = []

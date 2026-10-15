@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — BulSU HR Portal{% endblock %}
+{% block navbar %}
+{% from '_header.html' import site_header with context %}
+{{ site_header([('/admin', 'Dashboard'), ('/admin/logout', 'Logout')]) }}
+{% endblock %}
+{% block extra_style %}
+.atable { width:100%; border-collapse:collapse; font-size:13px; }
+.atable th { text-align:left; font-family:var(--font-mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--plum); padding:8px 10px; border-bottom:2px solid var(--gold); white-space:nowrap; }
+.atable td { padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+.act { font-family:var(--font-mono); font-size:12px; }
+.act.bad { color:#c0392b; font-weight:600; }
+.searchbar { display:flex; gap:10px; margin-bottom:14px; }
+.searchbar input { flex:1; }
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Audit Log</h1>
+    <p>Who did what, and when (Philippine time). Showing the latest 300 entries.</p>
+</div>
+<div class="card" style="overflow-x:auto;">
+    <form class="searchbar" method="GET">
+        <input name="q" value="{{ q }}" placeholder="Filter by user, action, target or details…">
+        <button class="btn btn-primary" type="submit">Filter</button>
+        {% if q %}<a class="btn btn-warning" href="/admin/audit">Clear</a>{% endif %}
+    </form>
+    <table class="atable">
+        <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Target</th><th>Details</th><th>IP</th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+            <td style="white-space:nowrap;">{{ r.created_at | ph_time }}</td>
+            <td>{{ r.username or '—' }}</td>
+            <td>{{ r.role or '—' }}</td>
+            <td class="act {% if 'failed' in r.action or 'denied' in r.action or 'blocked' in r.action %}bad{% endif %}">{{ r.action }}</td>
+            <td>{% if r.target_type %}{{ r.target_type }} {{ r.target_id or '' }}{% else %}—{% endif %}</td>
+            <td style="color:#666;">{{ r.details or '' }}</td>
+            <td style="color:#888;">{{ r.ip_address or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center; color:#999; padding:24px;">No entries.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

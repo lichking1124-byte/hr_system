@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Users — BulSU HR Portal{% endblock %}
+{% block navbar %}
+{% from '_header.html' import site_header with context %}
+{{ site_header([('/admin', 'Dashboard'), ('/admin/logout', 'Logout')]) }}
+{% endblock %}
+{% block extra_style %}
+.utable { width:100%; border-collapse:collapse; font-size:14px; }
+.utable th { text-align:left; font-family:var(--font-mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--plum); padding:8px 10px; border-bottom:2px solid var(--gold); }
+.utable td { padding:10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+.utable form { display:inline; }
+.utable select { width:auto; padding:5px 8px; font-size:13px; }
+.row-off { opacity:.55; }
+.grid2 { display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:12px; align-items:end; }
+@media (max-width:760px){ .grid2{grid-template-columns:1fr;} .utable{display:block; overflow-x:auto;} }
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>User Accounts</h1>
+    <p>HRMO Administrators manage who can sign in and what they can do.</p>
+</div>
+
+<div class="card">
+    <h3 style="color:var(--plum-dark);">Add Account</h3>
+    <form method="POST" class="grid2" autocomplete="off">
+        <div><label style="margin-top:6px;">Username</label><input name="username" required placeholder="e.g. jdelacruz"></div>
+        <div><label style="margin-top:6px;">Full Name</label><input name="full_name" required placeholder="Juan Dela Cruz"></div>
+        <div><label style="margin-top:6px;">Role</label>
+            <select name="role">
+                {% for key, label in ROLES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select></div>
+        <button type="submit" class="btn btn-gold" style="padding:11px 18px;">Create</button>
+    </form>
+    <p style="font-size:12px; color:#888; margin-top:10px;">A temporary password is generated and shown once. The user must change it at first sign-in.</p>
+</div>
+
+<div class="card" style="overflow-x:auto;">
+    <table class="utable">
+        <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for u in users %}
+        <tr class="{% if not u.is_active %}row-off{% endif %}">
+            <td><strong>{{ u.full_name or u.username }}</strong><br><span style="color:#888; font-size:12px;">{{ u.username }}</span></td>
+            <td>
+                {% if u.id == session.get('user_id') %}
+                    {{ ROLES.get(u.role, u.role) }} <span class="badge badge-gold">You</span>
+                {% else %}
+                <form method="POST" action="/admin/users/{{ u.id }}/role">
+                    <select name="role" onchange="this.form.submit()">
+                        {% for key, label in ROLES.items() %}<option value="{{ key }}" {% if u.role == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </form>
+                {% endif %}
+            </td>
+            <td>{% if u.is_active %}<span class="badge badge-success">Active</span>{% else %}<span class="badge badge-danger">Disabled</span>{% endif %}</td>
+            <td style="font-size:13px; color:#666;">{{ (u.last_login | ph_time) if u.last_login else 'Never' }}</td>
+            <td>
+                <form method="POST" action="/admin/users/{{ u.id }}/reset-password" onsubmit="return confirm('Reset this user\'s password?')">
+                    <button class="btn btn-warning btn-sm" type="submit">Reset password</button>
+                </form>
+                {% if u.id != session.get('user_id') %}
+                <form method="POST" action="/admin/users/{{ u.id }}/toggle">
+                    <button class="btn {{ 'btn-danger' if u.is_active else 'btn-primary' }} btn-sm" type="submit">{{ 'Deactivate' if u.is_active else 'Activate' }}</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

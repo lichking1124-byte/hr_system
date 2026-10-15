@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}My Account — BulSU HR Portal{% endblock %}
+{% block navbar %}
+{% from '_header.html' import site_header with context %}
+{{ site_header([('/admin', 'Dashboard'), ('/admin/logout', 'Logout')]) }}
+{% endblock %}
+{% block content %}
+<div style="max-width:520px; margin:0 auto;">
+    <div class="page-header">
+        <h1>My Account</h1>
+        <p>{{ user.full_name or user.username }} · {{ ROLES.get(user.role, user.role) }}</p>
+    </div>
+    <div class="card">
+        {% if user.must_change_password %}
+        <div class="alert alert-info">You must choose a new password before you can use the system.</div>
+        {% endif %}
+        <h3 style="color:var(--plum-dark); margin-bottom:4px;">Change Password</h3>
+        <form method="POST" autocomplete="off">
+            <label>Current Password</label>
+            <input type="password" name="current_password" required>
+            <label>New Password</label>
+            <input type="password" name="new_password" required minlength="8">
+            <div style="font-size:12px; color:#888; margin-top:4px;">At least 8 characters, with a letter and a number.</div>
+            <label>Confirm New Password</label>
+            <input type="password" name="confirm_password" required minlength="8">
+            <button type="submit" class="btn btn-gold" style="width:100%; margin-top:22px; padding:12px;">Update Password</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

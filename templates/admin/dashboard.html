@@ -81,7 +81,7 @@
             📦 Archived ({{ archived_jobs|length }})
         </button>
     </div>
-    <a href="/admin/job/new" class="btn btn-gold">+ Add New Job Posting</a>
+    {% if session.get('role') == 'hrmo' %}<a href="/admin/job/new" class="btn btn-gold">+ Add New Job Posting</a>{% endif %}
 </div>
 
 <!-- ── ACTIVE JOBS ── -->
@@ -107,6 +107,7 @@
                 <div class="job-actions">
                     <a href="/admin/job/{{ job.id }}/applicants"
                        class="btn btn-primary btn-sm">👥 Applicants</a>
+                    {% if session.get('role') == 'hrmo' %}
                     <a href="/admin/job/{{ job.id }}/generate-ad"
                        class="btn btn-gold btn-sm">🖼️ Job Ad</a>
                     <a href="/admin/job/{{ job.id }}/edit"
@@ -115,6 +116,7 @@
                           onsubmit="return confirm('Archive this job posting?')">
                         <button type="submit" class="btn btn-danger btn-sm">📦 Archive</button>
                     </form>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
@@ -147,6 +149,7 @@
                 </div>
             </div>
             <div class="job-actions">
+{% if session.get('role') == 'hrmo' %}
                 <form method="POST" action="/admin/job/{{ job.id }}/restore"
                       onsubmit="return confirm('Restore this job posting?')">
                     <button type="submit" class="btn btn-primary btn-sm">↩️ Restore</button>
@@ -155,6 +158,7 @@
                       onsubmit="return confirm('Permanently delete this job posting? This cannot be undone.')">
                     <button type="submit" class="btn btn-danger btn-sm">🗑️ Delete</button>
                 </form>
+                {% endif %}
             </div>
         </div>
         {% endfor %}
