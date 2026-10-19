@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check Application Status | BulSU HRMO</title>
+<style>
+  body { margin:0; font-family: Georgia, 'Times New Roman', serif; background:#f6f1e7; color:#2b2b2b; }
+  header { background:#7a1c1c; color:#fff; padding:18px 24px; border-bottom:4px solid #d4a531; }
+  header a { color:#f1d27a; text-decoration:none; font-size:14px; }
+  header h1 { margin:6px 0 0; font-size:22px; }
+  main { max-width:520px; margin:32px auto; padding:0 16px; }
+  .card { background:#fff; border:1px solid #e4d9c0; border-radius:8px; padding:24px; }
+  label { display:block; font-size:14px; margin:14px 0 6px; font-weight:bold; }
+  input { width:100%; box-sizing:border-box; padding:10px; border:1px solid #c9bd9f; border-radius:6px; font-size:15px; }
+  button { margin-top:20px; width:100%; padding:12px; background:#7a1c1c; color:#fff; border:0; border-radius:6px; font-size:16px; cursor:pointer; }
+  button:hover { background:#5e1414; }
+  .error { background:#fbeaea; border:1px solid #e3b4b4; color:#7a1c1c; padding:12px; border-radius:6px; margin-top:16px; font-size:14px; }
+  .row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #eee4cc; font-size:15px; }
+  .row span:first-child { color:#6b6b6b; }
+  .steps { margin:20px 0 6px; display:flex; gap:8px; }
+  .step { flex:1; text-align:center; padding:10px 6px; border-radius:6px; background:#eee8d8; color:#8a8370; font-size:13px; }
+  .step.done { background:#7a1c1c; color:#fff; }
+  .note { font-size:13px; color:#6b6b6b; margin-top:14px; line-height:1.5; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">&larr; Back to job openings</a>
+  <h1>Check Application Status</h1>
+</header>
+<main>
+  <div class="card">
+    {% if result %}
+      <p style="margin-top:0">Hello, <strong>{{ result.first_name }}</strong>. Here is your application:</p>
+      <div class="row"><span>Control number</span><strong>{{ result.control_number }}</strong></div>
+      <div class="row"><span>Position</span><span>{{ result.position }}</span></div>
+      <div class="row"><span>Campus</span><span>{{ result.campus }}</span></div>
+      <div class="row"><span>Date applied</span><span>{{ result.applied_date }}</span></div>
+
+      <div class="steps">
+        <div class="step done">1. Received</div>
+        <div class="step {{ 'done' if result.screened else '' }}">2. Under review</div>
+      </div>
+      <p class="note">
+        {% if result.screened %}
+          Your documents have been checked and your application is being reviewed by the HR office.
+        {% else %}
+          Your application and documents were received and are waiting to be checked.
+        {% endif %}
+        The HR office will contact you through the email you provided about the result.
+      </p>
+      <p class="note"><a href="/status">Check another application</a></p>
+    {% else %}
+      <form method="post">
+        <label for="control_number">Control number</label>
+        <input id="control_number" name="control_number" placeholder="BULSU-2026-00042" required>
+        <label for="email">Email used when applying</label>
+        <input id="email" name="email" type="email" placeholder="you@example.com" required>
+        <button type="submit">Check status</button>
+      </form>
+      {% if searched %}
+        <div class="error">No application found. Please check your control number and email and try again.</div>
+      {% endif %}
+      <p class="note">Your control number was shown after you submitted your application.</p>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>
