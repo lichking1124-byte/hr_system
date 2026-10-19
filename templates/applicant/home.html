@@ -40,6 +40,15 @@
 .hero-stat .num { font-family: var(--font-display); color: var(--gold); font-size: 34px; font-weight: 700; line-height: 1.1; }
 .hero-stat .lbl { color: var(--gold-pale); font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; margin-top: 4px; }
 .hero .btn-gold { padding: 14px 32px; font-size: 16px; font-weight: 700; }
+.hero-cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.hero .btn-status {
+    display: inline-block;
+    padding: 12px 30px; font-size: 16px; font-weight: 700;
+    border: 2px solid var(--gold); border-radius: 6px;
+    color: var(--gold-light); text-decoration: none;
+    transition: background 0.15s;
+}
+.hero .btn-status:hover { background: rgba(201,162,39,0.2); }
 .hero-stripe { height: 8px; background: var(--gold); }
 
 /* ── Section heading ── */
@@ -109,7 +118,10 @@
             <div class="hero-stat"><div class="num">{{ total_jobs }}</div><div class="lbl">Open Positions</div></div>
             <div class="hero-stat"><div class="num">1904</div><div class="lbl">Est. Year</div></div>
         </div>
-        <a href="#campuses" class="btn btn-gold">Browse Open Positions</a>
+        <div class="hero-cta">
+            <a href="#campuses" class="btn btn-gold">Browse Open Positions</a>
+            <a href="/status" class="btn-status">Check Application Status</a>
+        </div>
     </div>
 </section>
 <div class="hero-stripe"></div>
