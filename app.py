@@ -114,6 +114,39 @@ def apply(job_id):
 
     return render_template('applicant/apply.html', job=job, required_docs=required_docs)
 
+@app.route('/status', methods=['GET', 'POST'])
+def check_status():
+    result = None
+    searched = False
+
+    if request.method == 'POST':
+        searched = True
+        control_number = request.form.get('control_number', '').strip().upper()
+        email = request.form.get('email', '').strip().lower()
+
+        if control_number and email:
+            conn = get_db()
+            row = conn.execute('''
+                SELECT a.control_number, a.applied_at, a.is_screened, a.full_name,
+                       j.title, j.campus
+                FROM applicants a
+                JOIN job_postings j ON j.id = a.job_id
+                WHERE a.control_number = ? AND LOWER(a.email) = ?
+            ''', (control_number, email)).fetchone()
+            conn.close()
+
+            if row:
+                result = {
+                    'control_number': row['control_number'],
+                    'first_name': (row['full_name'] or '').split(' ')[0],
+                    'position': row['title'],
+                    'campus': row['campus'],
+                    'applied_date': str(row['applied_at'])[:10],
+                    'screened': bool(row['is_screened']),
+                }
+
+    return render_template('applicant/status.html', result=result, searched=searched)
+
 # ─── ADMIN ROUTES ────────────────────────────────────────────────
 
 @app.route('/admin')
