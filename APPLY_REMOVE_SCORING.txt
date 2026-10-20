@@ -1,0 +1,28 @@
+Remove the numeric scoring output and display
+
+1. Save remove_scoring.patch into your local repository folder:
+   F:\Recruitment\hr_system
+
+2. Open Command Prompt in that folder and run:
+   git apply --check remove_scoring.patch
+
+3. If the check succeeds, apply the changes:
+   git apply remove_scoring.patch
+
+4. Review the changed files:
+   git diff
+
+5. Test locally, then commit and push:
+   git add ai_screener.py app.py templates/admin/applicants.html exporter.py
+   git commit -m "Remove applicant screening scores"
+   git push
+
+Vercel should deploy the pushed commit automatically if the repository is still connected.
+
+Scope of this first change:
+- The AI output no longer asks for a numeric score.
+- Screening no longer writes a score to the database.
+- The HR applicant page no longer displays the score.
+- Both Excel exports no longer include a Score column.
+
+The legacy screening_score database column is intentionally left in place for now. Removing an unused column needs a separate migration and is not necessary to remove scoring from the current workflow. This patch does not yet remove strengths or weaknesses, and it does not change qualification logic.

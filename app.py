@@ -2,10 +2,13 @@ from flask import Flask, render_template, request, send_file, redirect, url_for,
 import os
 import json
 import requests
+from io import BytesIO
+from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
 from ai_screener import screen_applicant
+from screening_rules import decide
 from exporter import export_qualified, export_all
 from ad_generator import generate_job_ad_image
 from cloudinary_uploader import upload_file
@@ -26,6 +29,20 @@ except OSError:
 init_db()
 init_auth(app)
 app.register_blueprint(accounts)
+
+
+@app.template_filter('from_json')
+def from_json_filter(value):
+    """Turn a stored JSON list (text) back into a Python list for templates."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        data = json.loads(value)
+        return data if isinstance(data, list) else []
+    except (ValueError, TypeError):
+        return []
 
 # ─── APPLICANT ROUTES ────────────────────────────────────────────
 
@@ -372,6 +389,100 @@ def admin_applicants(job_id):
 
     return render_template('admin/applicants.html', job=job, applicants=applicants)
 
+DOC_MIMETYPES = {
+    '.pdf': 'application/pdf',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp',
+}
+IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
+
+
+def _doc_ext(doc):
+    name = (doc['filename'] or '') or (doc['filepath'] or '')
+    return os.path.splitext(name.split('?')[0])[1].lower()
+
+
+def _applicant_documents(conn, applicant_id):
+    # Fixed order so the position in this list can be used as the document's id
+    return conn.execute(
+        'SELECT * FROM applicant_documents WHERE applicant_id = ? '
+        'ORDER BY document_type, filename, filepath', (applicant_id,)
+    ).fetchall()
+
+
+@app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>')
+def admin_applicant_detail(job_id, applicant_id):
+    if 'admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    conn = get_db()
+    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
+    applicant = conn.execute(
+        'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
+    ).fetchone()
+    docs = _applicant_documents(conn, applicant_id) if applicant else []
+    conn.close()
+
+    if not job or not applicant:
+        return "Not found", 404
+
+    doc_list = [{
+        'idx': i,
+        'type': d['document_type'],
+        'filename': d['filename'],
+        'is_image': _doc_ext(d) in IMAGE_EXTS,
+    } for i, d in enumerate(docs)]
+
+    wanted = request.args.get('doc', default=0, type=int)
+    selected = doc_list[wanted] if 0 <= wanted < len(doc_list) else (doc_list[0] if doc_list else None)
+
+    return render_template('admin/applicant_detail.html',
+                           job=job, a=applicant, docs=doc_list, selected=selected)
+
+
+@app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/document/<int:idx>')
+def admin_view_document(job_id, applicant_id, idx):
+    # Documents are fetched by the server and shown only to logged-in staff,
+    # so applicants' files are never exposed through a public link.
+    if 'admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    conn = get_db()
+    applicant = conn.execute(
+        'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
+    ).fetchone()
+    docs = _applicant_documents(conn, applicant_id) if applicant else []
+    conn.close()
+
+    if not applicant or idx < 0 or idx >= len(docs):
+        return "Not found", 404
+
+    doc = docs[idx]
+    host = urlparse(doc['filepath'] or '').hostname or ''
+    if not host.endswith('cloudinary.com'):
+        return "Document location not allowed", 400
+
+    try:
+        resp = requests.get(doc['filepath'], timeout=20)
+    except requests.RequestException:
+        return "The document could not be loaded. Please try again.", 502
+    if resp.status_code != 200:
+        return "The document could not be loaded.", 502
+
+    ext = _doc_ext(doc)
+    known = ext in DOC_MIMETYPES
+    log_action('document.view', 'applicant', applicant_id, f"{doc['document_type']}")
+    out = send_file(
+        BytesIO(resp.content),
+        mimetype=DOC_MIMETYPES.get(ext, 'application/octet-stream'),
+        as_attachment=not known,          # unknown file types are downloaded, never rendered
+        download_name=doc['filename'] or 'document',
+    )
+    out.headers['X-Content-Type-Options'] = 'nosniff'
+    out.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    return out
+
+
 def screen_one_applicant(conn, applicant, job_specs):
     docs = conn.execute(
         'SELECT * FROM applicant_documents WHERE applicant_id = ?',
@@ -380,22 +491,16 @@ def screen_one_applicant(conn, applicant, job_specs):
 
     documents_text = {}
     for doc in docs:
-        text = extract_text_from_pdf(doc['filepath'])
+        text = extract_text_from_pdf(doc['filepath']) or ''
         if doc['document_type'] in documents_text:
             documents_text[doc['document_type']] += "\n\n--- Additional document ---\n\n" + text
         else:
             documents_text[doc['document_type']] = text
 
-    result = screen_applicant(documents_text, job_specs)
-
-    auto_failed = result.get('auto_failed', False)
-    missing = result.get('missing', [])
-    unverified = result.get('unverified_claims', [])
-    combined = missing + [f"Unverified: {u}" for u in unverified]
-    strengths = result.get('strengths', [])
-    weaknesses = result.get('weaknesses', [])
-
-    final_qualified = result['qualified'] and not auto_failed
+    # The AI only reads the documents and quotes evidence.
+    # Fixed rules (screening_rules.decide) make the actual decision.
+    extraction = screen_applicant(documents_text, job_specs)
+    outcome = decide(job_specs, extraction, documents_text)
 
     conn.execute('''
         UPDATE applicants SET
@@ -408,12 +513,12 @@ def screen_one_applicant(conn, applicant, job_specs):
         is_screened = 1
         WHERE id = ?
     ''', (
-        result['score'],
-        'qualified' if final_qualified else 'unqualified',
-        result['reason'],
-        json.dumps(combined),
-        json.dumps(strengths),
-        json.dumps(weaknesses),
+        outcome['met_count'],
+        'qualified' if outcome['qualified'] else 'unqualified',
+        outcome['reason'],
+        json.dumps(outcome['auto_fail_reasons']),
+        json.dumps(outcome['strengths']),
+        json.dumps(outcome['weaknesses']),
         applicant['id']
     ))
     conn.commit()
@@ -443,11 +548,17 @@ def admin_screen(job_id):
 
     job_specs = build_job_specs(job)
 
+    failed = 0
     for applicant in applicants:
-        screen_one_applicant(conn, applicant, job_specs)
+        try:
+            screen_one_applicant(conn, applicant, job_specs)
+        except Exception as e:
+            failed += 1
+            print(f"Screening failed for applicant {applicant['id']}: {e}")
 
     conn.close()
-    flash('Screening complete!')
+    flash('Screening complete!' if not failed else
+          f'Screening finished, but {failed} applicant(s) could not be screened. Please try them again.')
     return redirect(url_for('admin_applicants', job_id=job_id))
 
 @app.route('/admin/job/<int:job_id>/rescreen-all')
@@ -463,11 +574,17 @@ def admin_rescreen_all(job_id):
 
     job_specs = build_job_specs(job)
 
+    failed = 0
     for applicant in applicants:
-        screen_one_applicant(conn, applicant, job_specs)
+        try:
+            screen_one_applicant(conn, applicant, job_specs)
+        except Exception as e:
+            failed += 1
+            print(f"Screening failed for applicant {applicant['id']}: {e}")
 
     conn.close()
-    flash('All applicants re-screened!')
+    flash('All applicants re-screened!' if not failed else
+          f'Re-screen finished, but {failed} applicant(s) could not be screened. Please try them again.')
     return redirect(url_for('admin_applicants', job_id=job_id))
 
 @app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/rescreen')
@@ -486,10 +603,14 @@ def admin_rescreen_one(job_id, applicant_id):
         return "Not found", 404
 
     job_specs = build_job_specs(job)
-    screen_one_applicant(conn, applicant, job_specs)
+    try:
+        screen_one_applicant(conn, applicant, job_specs)
+        flash('Applicant re-screened!')
+    except Exception as e:
+        print(f"Screening failed for applicant {applicant_id}: {e}")
+        flash('This applicant could not be screened. Please try again.')
     conn.close()
 
-    flash('Applicant re-screened!')
     return redirect(url_for('admin_applicants', job_id=job_id))
 
 @app.route('/admin/job/<int:job_id>/generate-ad')

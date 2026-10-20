@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Review — {{ a.full_name }}{% endblock %}
+
+{% block navbar %}
+{% from '_header.html' import site_header with context %}
+{{ site_header([('/admin', 'Dashboard'), ('/admin/logout', 'Logout')]) }}
+{% endblock %}
+
+{% block extra_style %}
+.review-grid {
+    display: grid;
+    grid-template-columns: minmax(300px, 380px) 1fr;
+    gap: 20px;
+    align-items: start;
+}
+@media (max-width: 900px) { .review-grid { grid-template-columns: 1fr; } }
+.review-card {
+    background: white;
+    border-radius: 8px;
+    padding: 18px 20px;
+    box-shadow: 0 1px 6px rgba(103,30,30,0.08);
+    border-top: 3px solid var(--plum);
+    margin-bottom: 16px;
+}
+.review-card h3 { margin: 0 0 8px; color: var(--plum); font-size: 16px; }
+.review-meta { font-size: 13px; color: var(--text-muted); line-height: 1.8; }
+.review-reason { font-size: 13px; color: #555; margin-top: 10px; line-height: 1.6; }
+.strengths-box {
+    background: #d4edda; padding: 10px 14px; border-radius: 6px; margin-top: 8px;
+    border-left: 4px solid #2d7a3a; font-size: 13px; color: #1a4d24;
+}
+.strengths-box strong { display: block; margin-bottom: 5px; color: #0d3322; }
+.strengths-box ul, .weaknesses-box ul { margin: 5px 0 0 20px; padding: 0; }
+.strengths-box li, .weaknesses-box li { margin: 3px 0; }
+.weaknesses-box {
+    background: #fde8e8; padding: 10px 14px; border-radius: 6px; margin-top: 8px;
+    border-left: 4px solid var(--plum); font-size: 13px; color: var(--plum);
+}
+.weaknesses-box strong { display: block; margin-bottom: 5px; }
+.auto-fail-box {
+    background: #fde8e8; padding: 10px 12px; border-radius: 6px; margin-top: 8px;
+    font-size: 12px; color: var(--plum); font-weight: bold; border-left: 3px solid var(--plum);
+}
+.doc-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.doc-tab {
+    padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd; background: #fff;
+    text-decoration: none; font-size: 13px; color: var(--plum);
+}
+.doc-tab:hover { border-color: var(--plum); }
+.doc-tab.active { background: var(--plum); color: #fff; border-color: var(--plum); }
+.viewer-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; color: var(--text-muted); }
+.viewer-frame { width: 100%; height: 78vh; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+.viewer-img { max-width: 100%; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+.viewer-empty { background: white; border-radius: 8px; padding: 50px; text-align: center; color: #aaa; }
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ a.full_name }}</h1>
+    <p>📍 {{ job.campus }} &nbsp;|&nbsp; {{ job.title }}</p>
+</div>
+
+<div style="margin-bottom:16px;">
+    <a href="/admin/job/{{ job.id }}/applicants" class="btn btn-primary btn-sm">← Back to applicants</a>
+</div>
+
+<div class="review-grid">
+    <div>
+        <div class="review-card">
+            <h3>Applicant</h3>
+            <div class="review-meta">
+                {% if a.control_number %}🔖 {{ a.control_number }}<br>{% endif %}
+                📧 {{ a.email }}<br>
+                📱 {{ a.phone or 'N/A' }}<br>
+                🗓 Applied: {{ (a.applied_at | ph_time) if a.applied_at else '' }}
+            </div>
+        </div>
+
+        <div class="review-card">
+            <h3>Screening result</h3>
+            {% if a.is_screened %}
+                {% if a.screening_result == 'qualified' %}
+                <span class="badge badge-success">Qualified</span>
+                {% else %}
+                <span class="badge badge-danger">Unqualified</span>
+                {% endif %}
+                <div class="review-reason">{{ a.screening_reason }}</div>
+
+                {% set auto_fails = a.screening_missing | from_json %}
+                {% for item in auto_fails if 'Auto-failed' in item %}
+                <div class="auto-fail-box">🚫 {{ item }}</div>
+                {% endfor %}
+
+                {% set strengths = a.screening_strengths | from_json %}
+                {% if strengths %}
+                <div class="strengths-box">
+                    <strong>✅ Verified from documents:</strong>
+                    <ul>{% for item in strengths %}<li>{{ item }}</li>{% endfor %}</ul>
+                </div>
+                {% endif %}
+
+                {% set weaknesses = a.screening_weaknesses | from_json %}
+                {% if weaknesses %}
+                <div class="weaknesses-box">
+                    <strong>⚠️ Not verified / for HR review:</strong>
+                    <ul>{% for item in weaknesses %}<li>{{ item }}</li>{% endfor %}</ul>
+                </div>
+                {% endif %}
+            {% else %}
+                <span class="badge badge-warning">Pending</span>
+                <div class="review-reason">Not screened yet. Use the Screen button on the applicants page.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div>
+        {% if docs %}
+        <div class="doc-tabs">
+            {% for d in docs %}
+            <a class="doc-tab {{ 'active' if selected and d.idx == selected.idx else '' }}"
+               href="/admin/job/{{ job.id }}/applicant/{{ a.id }}?doc={{ d.idx }}">{{ d.type }}</a>
+            {% endfor %}
+        </div>
+        <div class="viewer-bar">
+            <span>{{ selected.filename }}</span>
+            <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}/document/{{ selected.idx }}" target="_blank" rel="noopener">Open in new tab ↗</a>
+        </div>
+        {% if selected.is_image %}
+        <img class="viewer-img" src="/admin/job/{{ job.id }}/applicant/{{ a.id }}/document/{{ selected.idx }}" alt="{{ selected.type }}">
+        {% else %}
+        <iframe class="viewer-frame" title="{{ selected.type }}"
+                src="/admin/job/{{ job.id }}/applicant/{{ a.id }}/document/{{ selected.idx }}"></iframe>
+        {% endif %}
+        {% else %}
+        <div class="viewer-empty">No documents were uploaded by this applicant.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

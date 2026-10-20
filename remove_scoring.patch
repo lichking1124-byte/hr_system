@@ -1,0 +1,68 @@
+diff --git a/ai_screener.py b/ai_screener.py
+--- a/ai_screener.py
++++ b/ai_screener.py
+@@ -79,7 +79,6 @@ RESPONSE FORMAT:
+ {{
+   "qualified": true or false,
+   "auto_failed": true or false,
+-  "score": a number from 0 to 100,
+   "reason": "two to three sentences explaining decision",
+   "strengths": ["list specific strengths matching the job", "e.g. Strong customer service background", "e.g. Relevant IT technical skills"],
+   "weaknesses": ["list specific weaknesses or gaps", "e.g. Education not verified", "e.g. Missing employment certificate"],
+diff --git a/app.py b/app.py
+--- a/app.py
++++ b/app.py
+@@ -366,7 +366,6 @@ def screen_one_applicant(conn, applicant, job_specs):
+     final_qualified = result['qualified'] and not auto_failed
+     conn.execute('''
+         UPDATE applicants SET
+-        screening_score = ?,
+         screening_result = ?,
+         screening_reason = ?,
+         screening_missing = ?,
+@@ -375,7 +374,6 @@ def screen_one_applicant(conn, applicant, job_specs):
+         is_screened = 1
+         WHERE id = ?
+     ''', (
+-        result['score'],
+         'qualified' if final_qualified else 'unqualified',
+         result['reason'],
+         json.dumps(combined),
+diff --git a/templates/admin/applicants.html b/templates/admin/applicants.html
+--- a/templates/admin/applicants.html
++++ b/templates/admin/applicants.html
+@@ -19,7 +19,6 @@
+ .applicant-name { font-weight: bold; font-size: 16px; color: var(--plum); }
+ .applicant-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+ .applicant-reason { font-size: 13px; color: #555; margin-top: 8px; line-height: 1.6; }
+-.score-badge { font-size: 20px; font-weight: bold; color: var(--plum); }
+ .stats-bar {
+     display: flex;
+     gap: 20px;
+@@ -170,7 +169,6 @@
+             </div>
+             <div style="text-align:center; min-width:100px;">
+                 {% if a.is_screened %}
+-                <div class="score-badge">{{ a.screening_score }}/100</div>
+                 {% if a.screening_result == 'qualified' %}
+                 <span class="badge badge-success">Qualified</span>
+                 {% else %}
+diff --git a/exporter.py b/exporter.py
+--- a/exporter.py
++++ b/exporter.py
+@@ -23,7 +23,6 @@ def export_qualified(applicants):
+             'Full Name': a['full_name'],
+             'Email': a['email'],
+             'Phone': a['phone'],
+-            'Score': a['screening_score'],
+             'Reason': a['screening_reason'],
+             'Verified Documents': a['screening_result'],
+             'Applied At': _fmt_timestamp(a.get('applied_at'))
+@@ -44,7 +43,6 @@ def export_all(applicants):
+             'Full Name': a['full_name'],
+             'Email': a['email'],
+             'Phone': a['phone'],
+-            'Score': a['screening_score'],
+             'Status': 'Qualified' if a['screening_result'] == 'qualified' else 'Unqualified',
+             'Reason': a['screening_reason'],
+             'Applied At': _fmt_timestamp(a.get('applied_at'))
