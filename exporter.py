@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 from io import BytesIO
 from datetime import timedelta
@@ -15,6 +16,17 @@ def _fmt_timestamp(value):
     return str(value)
 
 
+def _join_json(value):
+    """screening_strengths / screening_weaknesses are stored as JSON lists."""
+    if not value:
+        return ''
+    try:
+        items = json.loads(value) if isinstance(value, str) else value
+        return ' | '.join(str(i) for i in items)
+    except (ValueError, TypeError):
+        return str(value)
+
+
 def export_qualified(applicants):
     if not applicants:
         return None
@@ -26,9 +38,9 @@ def export_qualified(applicants):
             'Full Name': a['full_name'],
             'Email': a['email'],
             'Phone': a['phone'],
-            'Score': a['screening_score'],
             'Reason': a['screening_reason'],
-            'Verified Documents': a['screening_result'],
+            'Verified': _join_json(a.get('screening_strengths')),
+            'Not Verified / For Review': _join_json(a.get('screening_weaknesses')),
             'Applied At': _fmt_timestamp(a.get('applied_at'))
         })
 
@@ -49,9 +61,10 @@ def export_all(applicants):
             'Full Name': a['full_name'],
             'Email': a['email'],
             'Phone': a['phone'],
-            'Score': a['screening_score'],
             'Status': 'Qualified' if a['screening_result'] == 'qualified' else 'Unqualified',
             'Reason': a['screening_reason'],
+            'Verified': _join_json(a.get('screening_strengths')),
+            'Not Verified / For Review': _join_json(a.get('screening_weaknesses')),
             'Applied At': _fmt_timestamp(a.get('applied_at'))
         })
 
