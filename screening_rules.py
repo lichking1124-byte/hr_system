@@ -144,6 +144,10 @@ def decide(job_specs, extraction, documents_text):
     else:
         reason = (f'Unqualified: {met} of {total} listed requirements verified and the '
                   f'posting has no mandatory requirements set.')
+    unreadable = [slot for slot, text in documents_text.items() if len((text or '').strip()) < 20]
+    if unreadable:
+        reason += (f' Note: {len(unreadable)} uploaded document(s) had no readable text, so this '
+                   f'result may be incomplete. HR should review those files manually.')
     reason += ' Decision made by fixed rules; the AI only read the documents.'
 
     return {

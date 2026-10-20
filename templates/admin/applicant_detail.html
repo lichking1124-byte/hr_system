@@ -125,11 +125,16 @@
             <span>{{ selected.filename }}</span>
             <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}/document/{{ selected.idx }}" target="_blank" rel="noopener">Open in new tab ↗</a>
         </div>
-        {% if selected.is_image %}
+        {% if selected.kind == 'image' %}
         <img class="viewer-img" src="/admin/job/{{ job.id }}/applicant/{{ a.id }}/document/{{ selected.idx }}" alt="{{ selected.type }}">
-        {% else %}
+        {% elif selected.kind == 'frame' %}
         <iframe class="viewer-frame" title="{{ selected.type }}"
                 src="/admin/job/{{ job.id }}/applicant/{{ a.id }}/document/{{ selected.idx }}"></iframe>
+        {% else %}
+        <div class="viewer-empty">
+            This file type can't be previewed here.<br><br>
+            <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}/document/{{ selected.idx }}">Download {{ selected.filename }}</a>
+        </div>
         {% endif %}
         {% else %}
         <div class="viewer-empty">No documents were uploaded by this applicant.</div>

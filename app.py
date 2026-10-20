@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash
+from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash, Response
 import os
 import json
 import requests
@@ -88,6 +88,14 @@ def apply(job_id):
     required_docs = json.loads(job['required_documents']) if job['required_documents'] else []
 
     if request.method == 'POST':
+        allowed_types = ('.pdf', '.docx')
+        for doc_type in required_docs:
+            field_name = doc_type.replace(' ', '_').lower()
+            for file in request.files.getlist(field_name):
+                if file and file.filename and os.path.splitext(file.filename)[1].lower() not in allowed_types:
+                    return (f'"{file.filename}" is not accepted. Please upload PDF or Word (.docx) '
+                            f'files only. Go back and try again.', 400)
+
         full_name = request.form['full_name']
         email = request.form['email']
         phone = request.form['phone']
@@ -397,6 +405,14 @@ DOC_MIMETYPES = {
 IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 
 
+def _doc_kind(ext):
+    if ext in IMAGE_EXTS:
+        return 'image'
+    if ext in ('.pdf', '.docx'):
+        return 'frame'
+    return 'none'
+
+
 def _doc_ext(doc):
     name = (doc['filename'] or '') or (doc['filepath'] or '')
     return os.path.splitext(name.split('?')[0])[1].lower()
@@ -430,7 +446,7 @@ def admin_applicant_detail(job_id, applicant_id):
         'idx': i,
         'type': d['document_type'],
         'filename': d['filename'],
-        'is_image': _doc_ext(d) in IMAGE_EXTS,
+        'kind': _doc_kind(_doc_ext(d)),
     } for i, d in enumerate(docs)]
 
     wanted = request.args.get('doc', default=0, type=int)
@@ -470,6 +486,27 @@ def admin_view_document(job_id, applicant_id, idx):
         return "The document could not be loaded.", 502
 
     ext = _doc_ext(doc)
+
+    if ext == '.docx':
+        # Browsers cannot display Word files, so convert to plain HTML on the server.
+        # The page is sandboxed: no scripts, no outside requests.
+        try:
+            import mammoth
+            body = mammoth.convert_to_html(BytesIO(resp.content)).value
+        except Exception:
+            return "This Word file could not be previewed. Please download it instead.", 502
+        page = ('<!doctype html><meta charset="utf-8"><style>'
+                'body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;'
+                'line-height:1.5;color:#222}table{border-collapse:collapse}'
+                'td,th{border:1px solid #ccc;padding:4px 8px}img{max-width:100%}</style>' + body)
+        out = Response(page, mimetype='text/html')
+        out.headers['Content-Security-Policy'] = ("sandbox; default-src 'none'; "
+                                                  "img-src data:; style-src 'unsafe-inline'")
+        out.headers['X-Content-Type-Options'] = 'nosniff'
+        out.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        log_action('document.view', 'applicant', applicant_id, f"{doc['document_type']}")
+        return out
+
     known = ext in DOC_MIMETYPES
     log_action('document.view', 'applicant', applicant_id, f"{doc['document_type']}")
     out = send_file(
