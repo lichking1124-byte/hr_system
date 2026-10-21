@@ -81,13 +81,15 @@
             {% if a.is_screened %}
                 {% if a.screening_result == 'qualified' %}
                 <span class="badge badge-success">Qualified</span>
+                {% elif a.screening_result == 'under_review' %}
+                <span class="badge badge-warning">Under review</span>
                 {% else %}
-                <span class="badge badge-danger">Unqualified</span>
+                <span class="badge badge-danger">Disqualified</span>
                 {% endif %}
                 <div class="review-reason">{{ a.screening_reason }}</div>
 
                 {% set auto_fails = a.screening_missing | from_json %}
-                {% for item in auto_fails if 'Auto-failed' in item %}
+                {% for item in auto_fails if item.startswith('Auto-failed') or item.startswith('Disqualified') %}
                 <div class="auto-fail-box">🚫 {{ item }}</div>
                 {% endfor %}
 

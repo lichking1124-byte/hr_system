@@ -73,6 +73,15 @@
     flex-direction: column;
     gap: 6px;
 }
+.applicant-card.under_review { border-left-color: var(--gold-dark); }
+.group-head { font-size: 18px; color: var(--plum); margin: 26px 0 4px; }
+.group-head span { color: var(--text-muted); font-weight: normal; font-size: 14px; }
+.group-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5; }
+.check-details { margin-top: 8px; }
+.check-details > summary {
+    cursor: pointer; font-size: 13px; font-weight: 600; color: var(--plum);
+    padding: 4px 0; user-select: none;
+}
 {% endblock %}
 
 {% block content %}
@@ -83,8 +92,7 @@
 
 <p style="font-size:13px; color:var(--text-muted); margin:-6px 0 16px;">
     How results are decided: the AI reads each applicant's documents and quotes the evidence it found.
-    The system checks that every quote really appears in the documents, then fixed rules decide
-    qualified or unqualified. HR makes the final decision.
+    The system checks that every quote really appears in the documents, then fixed rules sort each applicant into Qualified, Under review or Disqualified. HR makes the final decision.
 </p>
 
 <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
@@ -116,107 +124,123 @@
     <span style="color:#2d7a3a;">✅ Qualified:
         <strong>{{ applicants|selectattr('screening_result','equalto','qualified')|list|length }}</strong>
     </span>
-    <span style="color:var(--plum);">❌ Unqualified:
+    <span style="color:var(--gold-dark);">🔎 Under review:
+        <strong>{{ applicants|selectattr('screening_result','equalto','under_review')|list|length }}</strong>
+    </span>
+    <span style="color:var(--plum);">❌ Disqualified:
         <strong>{{ applicants|selectattr('screening_result','equalto','unqualified')|list|length }}</strong>
     </span>
-    <span style="color:var(--gold-dark);">⏳ Pending:
+    <span style="color:#888;">⏳ Not screened:
         <strong>{{ applicants|selectattr('is_screened','equalto',0)|list|length }}</strong>
     </span>
 </div>
 
-{% if applicants %}
-    {% for a in applicants %}
-    <div class="applicant-card {{ a.screening_result if a.is_screened else 'pending' }}">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px;">
-            <div style="flex:1;">
-                <div class="applicant-name">
-                    {{ a.full_name }}
-                    {% if a.control_number %}
-                    <span style="font-size:12px; font-weight:600; color:var(--plum); background:#f3e6e6; padding:2px 8px; border-radius:10px; margin-left:8px;">
-                        {{ a.control_number }}
-                    </span>
-                    {% endif %}
-                </div>
-                <div class="applicant-meta">
-                    📧 {{ a.email }} &nbsp;|&nbsp;
-                    📱 {{ a.phone or 'N/A' }} &nbsp;|&nbsp;
-                    🗓 Applied: {{ (a.applied_at | ph_time) if a.applied_at else '' }}
-                </div>
+{% macro card(a) %}
+{% set strengths = a.screening_strengths | from_json %}
+{% set weaknesses = a.screening_weaknesses | from_json %}
+{% set auto_fails = a.screening_missing | from_json %}
+<div class="applicant-card {{ a.screening_result if a.is_screened else 'pending' }}">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px;">
+        <div style="flex:1;">
+            <div class="applicant-name">
+                {{ a.full_name }}
+                {% if a.control_number %}
+                <span style="font-size:12px; font-weight:600; color:var(--plum); background:#f3e6e6; padding:2px 8px; border-radius:10px; margin-left:8px;">
+                    {{ a.control_number }}
+                </span>
+                {% endif %}
+            </div>
+            <div class="applicant-meta">
+                📧 {{ a.email }} &nbsp;|&nbsp;
+                📱 {{ a.phone or 'N/A' }} &nbsp;|&nbsp;
+                🗓 Applied: {{ (a.applied_at | ph_time) if a.applied_at else '' }}
+            </div>
 
-                {% if a.is_screened %}
-                <div class="applicant-reason">{{ a.screening_reason }}</div>
+            {% if a.is_screened %}
+            <div class="applicant-reason">{{ a.screening_reason }}</div>
 
-                {% set strengths = a.screening_strengths | from_json %}
+            {% if strengths or weaknesses or auto_fails %}
+            <details class="check-details">
+                <summary>Checklist details</summary>
+
+                {% for item in auto_fails if item.startswith('Auto-failed') or item.startswith('Disqualified') %}
+                <div class="auto-fail-box">🚫 {{ item }}</div>
+                {% endfor %}
+
                 {% if strengths %}
                 <div class="strengths-box">
                     <strong>✅ Verified from documents:</strong>
-                    <ul>
-                        {% for item in strengths %}
-                        <li>{{ item }}</li>
-                        {% endfor %}
-                    </ul>
+                    <ul>{% for item in strengths %}<li>{{ item }}</li>{% endfor %}</ul>
                 </div>
                 {% endif %}
 
-                {% set weaknesses = a.screening_weaknesses | from_json %}
                 {% if weaknesses %}
                 <div class="weaknesses-box">
                     <strong>⚠️ Not verified / for HR review:</strong>
-                    <ul>
-                        {% for item in weaknesses %}
-                        <li>{{ item }}</li>
-                        {% endfor %}
-                    </ul>
+                    <ul>{% for item in weaknesses %}<li>{{ item }}</li>{% endfor %}</ul>
                 </div>
                 {% endif %}
+            </details>
+            {% endif %}
 
-                {% set auto_fails = a.screening_missing | from_json %}
-                {% for item in auto_fails if 'Auto-failed' in item %}
-                <div class="auto-fail-box">
-                    🚫 {{ item }}
-                </div>
-                {% endfor %}
-
-                {% else %}
-                <div class="applicant-meta" style="margin-top:8px; color:var(--gold-dark);">
-                    ⏳ Pending screening — click Screen button above
-                </div>
-                {% endif %}
+            {% else %}
+            <div class="applicant-meta" style="margin-top:8px; color:var(--gold-dark);">
+                ⏳ Pending screening — click Screen button above
             </div>
+            {% endif %}
+        </div>
 
-            <div style="text-align:center; min-width:100px;">
-                {% if a.is_screened %}
+        <div style="text-align:center; min-width:100px;">
+            {% if a.is_screened %}
                 {% if a.screening_result == 'qualified' %}
                 <span class="badge badge-success">Qualified</span>
+                {% elif a.screening_result == 'under_review' %}
+                <span class="badge badge-warning">Under review</span>
                 {% else %}
-                <span class="badge badge-danger">Unqualified</span>
+                <span class="badge badge-danger">Disqualified</span>
                 {% endif %}
-                {% else %}
-                <span class="badge badge-warning">Pending</span>
+            {% else %}
+            <span class="badge badge-warning">Pending</span>
+            {% endif %}
+
+            <div class="action-buttons" style="margin-top:10px;">
+                <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}"
+                   class="btn btn-primary btn-sm">
+                    👁 Review
+                </a>
+                <a href="/admin/job/{{ job.id }}/download/documents/{{ a.id }}"
+                   class="btn btn-success btn-sm">
+                    📥 Docs
+                </a>
+                {% if a.is_screened and session.get('role') == 'hrmo' %}
+                <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}/rescreen"
+                   class="btn btn-warning btn-sm">
+                    🔄 Re-screen
+                </a>
                 {% endif %}
-                
-                <div class="action-buttons" style="margin-top:10px;">
-                    <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}"
-                       class="btn btn-primary btn-sm">
-                        👁 Review
-                    </a>
-                    <a href="/admin/job/{{ job.id }}/download/documents/{{ a.id }}" 
-                       class="btn btn-success btn-sm">
-                        📥 Docs
-                    </a>
-                    {% if a.is_screened %}
-                    {% if session.get('role') == 'hrmo' %}
-                    <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}/rescreen"
-                       class="btn btn-warning btn-sm">
-                        🔄 Re-screen
-                    </a>
-                    {% endif %}
-                    {% endif %}
-                </div>
             </div>
         </div>
     </div>
-    {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro group(title, hint, items) %}
+{% if items %}
+<h2 class="group-head">{{ title }} <span>({{ items|length }})</span></h2>
+<div class="group-hint">{{ hint }}</div>
+{% for a in items %}{{ card(a) }}{% endfor %}
+{% endif %}
+{% endmacro %}
+
+{% if applicants %}
+    {{ group('✅ Qualified', 'Every requirement was verified from readable documents.',
+             applicants|selectattr('screening_result','equalto','qualified')|list) }}
+    {{ group('🔎 Under review', 'The system could not clearly confirm everything, for example a scan, a photo, a file in the wrong slot, or a requirement that is not mandatory. HR should check the documents.',
+             applicants|selectattr('screening_result','equalto','under_review')|list) }}
+    {{ group('❌ Disqualified', 'The documents were readable, but a mandatory requirement was not verified.',
+             applicants|selectattr('screening_result','equalto','unqualified')|list) }}
+    {{ group('⏳ Not screened yet', 'Click Screen above to check these applicants.',
+             applicants|selectattr('is_screened','equalto',0)|list) }}
 {% else %}
     <div class="card" style="text-align:center; color:#aaa; padding:50px;">
         No applicants yet for this position.

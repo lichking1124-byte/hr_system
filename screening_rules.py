@@ -1,30 +1,27 @@
 """
-Fixed rules that decide whether an applicant is qualified.
+Fixed rules that sort every screened applicant into one of three groups.
 
 The AI model never decides. It only answers, for each requirement, "do the
 documents show this?" and quotes the exact words it relied on. This file
-then checks the quote really exists in the uploaded documents and applies
-the rules below. Same inputs always give the same result.
+checks the quote really exists in the uploaded documents and applies the
+rules below. Same inputs always give the same result.
 
-RULES
-1. Only requirements the posting actually lists are checked
-   (education, experience, skills, other).
-2. A requirement counts as VERIFIED only if the AI says it is met AND its
-   quote is found, word for word, in one of the applicant's documents.
-3. Education marked mandatory must be proven by the Diploma / Transcript
-   slot, not by a resume.
-4. If any MANDATORY requirement is not verified -> auto-fail.
-5. If the posting has NO mandatory requirement, every listed requirement
-   must be verified to qualify.  (Change NO_MANDATORY_NEEDS_ALL if HR wants
-   different behaviour.)
-6. Non-mandatory requirements that are not verified never fail the
-   applicant; they are shown to HR as "not verified".
-7. Documents that do not look like the slot they were uploaded in are
-   flagged for HR (they never change the result by themselves).
+A requirement is VERIFIED only if the AI says it is met AND its quote is
+found, word for word, in one of the applicant's documents. Education marked
+mandatory must be proven by the Diploma / Transcript slot, not a resume.
+
+THE THREE GROUPS
+QUALIFIED     Every requirement listed in the posting is verified, and every
+              uploaded document is readable and looks like its slot.
+DISQUALIFIED  The documents were readable, but a MANDATORY requirement is not
+              verified.
+UNDER REVIEW  Everything else: a document could not be read clearly (scan,
+              photo, damaged file) or looks like it is in the wrong slot, or
+              all mandatory requirements are verified but some other
+              requirement is not, or the posting lists nothing to check.
+              HR checks these by hand.
 """
 import re
-
-NO_MANDATORY_NEEDS_ALL = True
 
 CATEGORIES = [
     ('education', 'Education'),
@@ -121,41 +118,47 @@ def decide(job_specs, extraction, documents_text):
         else:
             weaknesses.append(f'{label} ({tag}) not verified: {required} [{detail}]')
             if is_mand:
-                auto_fail.append(f'Auto-failed: mandatory {label.lower()} requirement not verified ({required})')
+                auto_fail.append(f'Disqualified: mandatory {label.lower()} requirement not verified ({required})')
 
-    weaknesses.extend(check_document_slots(documents_text))
-
-    if mandatory and any(c[3] for c in checked):
-        qualified = not auto_fail
-    elif NO_MANDATORY_NEEDS_ALL:
-        qualified = bool(checked) and all(c[4] for c in checked)
-    else:
-        qualified = True
+    doc_warnings = check_document_slots(documents_text)
+    weaknesses.extend(doc_warnings)
 
     met = sum(1 for c in checked if c[4])
     total = len(checked)
-    if auto_fail:
-        reason = (f'Unqualified: {len(auto_fail)} mandatory requirement(s) could not be '
-                  f'verified from the submitted documents. {met} of {total} listed '
-                  f'requirements verified.')
-    elif qualified:
-        reason = (f'Qualified: all mandatory requirements verified. {met} of {total} '
-                  f'listed requirements verified.')
+    has_mandatory = any(c[3] for c in checked)
+    doc_problem = bool(doc_warnings)
+
+    if total == 0:
+        result = 'under_review'
+        reason = ('Under review: this posting lists no requirements for the system to check, '
+                  'so HR should review the documents.')
+    elif met == total and not doc_problem:
+        result = 'qualified'
+        reason = f'Qualified: all {total} listed requirement(s) were verified from the submitted documents.'
+    elif auto_fail and not doc_problem:
+        result = 'unqualified'
+        reason = (f'Disqualified: {len(auto_fail)} mandatory requirement(s) could not be verified from '
+                  f'the submitted documents. {met} of {total} listed requirements verified.')
     else:
-        reason = (f'Unqualified: {met} of {total} listed requirements verified and the '
-                  f'posting has no mandatory requirements set.')
-    unreadable = [slot for slot, text in documents_text.items() if len((text or '').strip()) < 20]
-    if unreadable:
-        reason += (f' Note: {len(unreadable)} uploaded document(s) had no readable text, so this '
-                   f'result may be incomplete. HR should review those files manually.')
-    reason += ' Decision made by fixed rules; the AI only read the documents.'
+        result = 'under_review'
+        if doc_problem:
+            reason = ('Under review: some documents could not be read clearly or may be in the wrong '
+                      'slot, so the system cannot confirm every requirement. HR should check those files.')
+        elif has_mandatory:
+            reason = (f'Under review: all mandatory requirements were verified, but {total - met} other '
+                      f'requirement(s) could not be verified.')
+        else:
+            reason = (f'Under review: {total - met} of {total} requirement(s) could not be verified and '
+                      f'none is marked mandatory.')
+    reason += ' Result set by fixed rules; the AI only read the documents.'
 
     return {
-        'qualified': qualified,
+        'result': result,
+        'qualified': result == 'qualified',
         'met_count': met,
         'total': total,
         'reason': reason,
         'strengths': strengths,
         'weaknesses': weaknesses,
-        'auto_fail_reasons': auto_fail,
+        'auto_fail_reasons': auto_fail if result == 'unqualified' else [],
     }

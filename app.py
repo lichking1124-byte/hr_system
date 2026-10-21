@@ -585,7 +585,7 @@ def screen_one_applicant(conn, applicant, job_specs):
         WHERE id = ?
     ''', (
         outcome['met_count'],
-        'qualified' if outcome['qualified'] else 'unqualified',
+        outcome['result'],          # qualified / unqualified (disqualified) / under_review
         outcome['reason'],
         json.dumps(outcome['auto_fail_reasons']),
         json.dumps(outcome['strengths']),

@@ -3,6 +3,7 @@ import pandas as pd
 from io import BytesIO
 from datetime import timedelta
 
+STATUS_LABELS = {'qualified': 'Qualified', 'unqualified': 'Disqualified', 'under_review': 'Under review'}
 PH_OFFSET = timedelta(hours=8)   # database stores UTC
 
 
@@ -61,7 +62,7 @@ def export_all(applicants):
             'Full Name': a['full_name'],
             'Email': a['email'],
             'Phone': a['phone'],
-            'Status': 'Qualified' if a['screening_result'] == 'qualified' else 'Unqualified',
+            'Status': STATUS_LABELS.get(a['screening_result'], 'Under review'),
             'Reason': a['screening_reason'],
             'Verified': _join_json(a.get('screening_strengths')),
             'Not Verified / For Review': _join_json(a.get('screening_weaknesses')),
