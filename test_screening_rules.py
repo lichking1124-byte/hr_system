@@ -104,6 +104,20 @@ class ThreeGroups(unittest.TestCase):
         self.assertEqual(r['result'], 'unqualified')
         self.assertTrue(any('not in a diploma or transcript' in w for w in r['weaknesses']))
 
+    def test_several_quotes_one_in_the_diploma_is_enough(self):
+        pds = 'EDUCATIONAL BACKGROUND COLLEGE ' + EDU.upper() + ' 2020 2024'
+        docs = {'Personal Data Sheet (PDS)': pds, 'Diploma': DIPLOMA, 'Resume': RESUME}
+        item = {'requirements': {'education': {'met': True, 'evidence': ['COLLEGE ' + EDU.upper(), EDU]}}}
+        job = dict(JOB, skills='')
+        self.assertEqual(decide(job, item, docs)['result'], 'qualified')
+
+    def test_several_quotes_none_in_the_diploma_still_fails(self):
+        pds = 'EDUCATIONAL BACKGROUND COLLEGE ' + EDU.upper() + ' 2020 2024'
+        docs = {'Personal Data Sheet (PDS)': pds, 'Diploma': GOOD_MORAL, 'Resume': RESUME}
+        item = {'requirements': {'education': {'met': True, 'evidence': ['COLLEGE ' + EDU.upper(), 'Education: BSIT']}}}
+        job = dict(JOB, skills='')
+        self.assertEqual(decide(job, item, docs)['result'], 'unqualified')
+
     def test_failed_quote_is_shown_to_hr(self):
         r = decide(JOB, ai(education='Master of Science in Computer Science from MIT'), DOCS)
         self.assertTrue(any('Master of Science in Computer Science' in w for w in r['weaknesses']))

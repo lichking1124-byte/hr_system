@@ -111,6 +111,23 @@ def check_document_slots(documents_text):
     return warnings
 
 
+def _quotes(item):
+    """The AI may return one quote (text) or a list of quotes."""
+    ev = item.get('evidence', '')
+    if isinstance(ev, str):
+        ev = [ev]
+    return [str(q).strip() for q in (ev or []) if str(q).strip()]
+
+
+def _first_match(quotes, documents):
+    """(quote, slot) for the first quote found in the given documents, else (None, None)."""
+    for q in quotes:
+        slot = find_evidence(q, documents)
+        if slot:
+            return q, slot
+    return None, None
+
+
 def _listed(job_specs, key):
     value = job_specs.get(key if key != 'other' else 'other_requirements') or ''
     return value.strip().lower() not in EMPTY_VALUES, value.strip()
@@ -127,17 +144,17 @@ def decide(job_specs, extraction, documents_text):
             continue
         item = ai_items.get(key) or {}
         claimed = item.get('met') is True
-        evidence = item.get('evidence', '')
-        slot = find_evidence(evidence, documents_text) if claimed else None
+        quotes = _quotes(item)
+        used_quote, slot = _first_match(quotes, documents_text) if claimed else (None, None)
         verified = claimed and slot is not None
         detail = ''
         if claimed and key == 'education' and key in mandatory:
             # Mandatory education must be proven by the diploma or transcript. Look there
             # first, even when the PDS or resume contains the same words.
             proof_docs = {s_: t_ for s_, t_ in documents_text.items() if DIPLOMA_SLOT.search(s_)}
-            proof_slot = find_evidence(evidence, proof_docs)
+            proof_quote, proof_slot = _first_match(quotes, proof_docs)
             if proof_slot:
-                slot, verified = proof_slot, True
+                used_quote, slot, verified = proof_quote, proof_slot, True
                 detail = f'found in "{proof_slot}"'
             elif slot:
                 verified = False
@@ -146,12 +163,12 @@ def decide(job_specs, extraction, documents_text):
             if verified:
                 detail = f'found in "{slot}"'
             elif claimed:
-                quote = (evidence or '').strip()[:100]
-                detail = f'the AI\'s quote was not found in any uploaded document: "{quote}"'
+                shown = '" / "'.join(q[:100] for q in quotes[:2])
+                detail = f'the AI\'s quote was not found in any uploaded document: "{shown}"'
             else:
                 detail = 'no supporting evidence found in the documents'
         checked.append((key, label, required_text, key in mandatory, verified, detail,
-                        (item.get('evidence') or '').strip()))
+                        (used_quote or '').strip()))
 
     strengths, weaknesses, auto_fail = [], [], []
     for key, label, required, is_mand, verified, detail, evidence in checked:
