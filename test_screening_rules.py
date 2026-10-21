@@ -89,6 +89,21 @@ class ThreeGroups(unittest.TestCase):
         self.assertIsNone(find_evidence('Master of Science in Computer Science from MIT', {'Resume': RESUME}))
         self.assertIsNone(find_evidence('Technology Information Science of Bachelor', {'Diploma': DIPLOMA}))
 
+    def test_degree_in_both_pds_and_diploma_still_counts_as_diploma_proof(self):
+        pds = 'EDUCATIONAL BACKGROUND COLLEGE ' + EDU.upper() + ' 2020 2024'
+        # the PDS comes first, as it does in the real upload order
+        docs = {'Personal Data Sheet (PDS)': pds, 'Diploma': DIPLOMA, 'Resume': RESUME}
+        r = decide(JOB, ai(education=EDU, skills=SKILL), docs)
+        self.assertEqual(r['result'], 'qualified')
+        self.assertTrue(any('found in "Diploma"' in s for s in r['strengths']))
+
+    def test_degree_only_in_pds_is_not_diploma_proof(self):
+        pds = 'EDUCATIONAL BACKGROUND COLLEGE ' + EDU.upper() + ' 2020 2024'
+        docs = {'Personal Data Sheet (PDS)': pds, 'Diploma': GOOD_MORAL, 'Resume': RESUME}
+        r = decide(JOB, ai(education=EDU, skills=SKILL), docs)
+        self.assertEqual(r['result'], 'unqualified')
+        self.assertTrue(any('not in a diploma or transcript' in w for w in r['weaknesses']))
+
     def test_failed_quote_is_shown_to_hr(self):
         r = decide(JOB, ai(education='Master of Science in Computer Science from MIT'), DOCS)
         self.assertTrue(any('Master of Science in Computer Science' in w for w in r['weaknesses']))

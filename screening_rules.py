@@ -127,19 +127,29 @@ def decide(job_specs, extraction, documents_text):
             continue
         item = ai_items.get(key) or {}
         claimed = item.get('met') is True
-        slot = find_evidence(item.get('evidence', ''), documents_text) if claimed else None
+        evidence = item.get('evidence', '')
+        slot = find_evidence(evidence, documents_text) if claimed else None
         verified = claimed and slot is not None
         detail = ''
-        if verified and key == 'education' and key in mandatory and not DIPLOMA_SLOT.search(slot):
-            verified = False
-            detail = f'the proof was found in "{slot}", not in a diploma or transcript'
-        elif verified:
-            detail = f'found in "{slot}"'
-        elif claimed:
-            quote = (item.get('evidence') or '').strip()[:100]
-            detail = f'the AI\'s quote was not found in any uploaded document: "{quote}"'
-        else:
-            detail = 'no supporting evidence found in the documents'
+        if claimed and key == 'education' and key in mandatory:
+            # Mandatory education must be proven by the diploma or transcript. Look there
+            # first, even when the PDS or resume contains the same words.
+            proof_docs = {s_: t_ for s_, t_ in documents_text.items() if DIPLOMA_SLOT.search(s_)}
+            proof_slot = find_evidence(evidence, proof_docs)
+            if proof_slot:
+                slot, verified = proof_slot, True
+                detail = f'found in "{proof_slot}"'
+            elif slot:
+                verified = False
+                detail = f'the proof was found in "{slot}", not in a diploma or transcript'
+        if not detail:
+            if verified:
+                detail = f'found in "{slot}"'
+            elif claimed:
+                quote = (evidence or '').strip()[:100]
+                detail = f'the AI\'s quote was not found in any uploaded document: "{quote}"'
+            else:
+                detail = 'no supporting evidence found in the documents'
         checked.append((key, label, required_text, key in mandatory, verified, detail,
                         (item.get('evidence') or '').strip()))
 
