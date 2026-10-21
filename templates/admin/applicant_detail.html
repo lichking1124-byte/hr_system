@@ -41,6 +41,11 @@
     background: #fde8e8; padding: 10px 12px; border-radius: 6px; margin-top: 8px;
     font-size: 12px; color: var(--plum); font-weight: bold; border-left: 3px solid var(--plum);
 }
+.ai-box {
+    background: #fff8e1; padding: 10px 14px; border-radius: 6px; margin-top: 8px;
+    border-left: 4px solid #e0a800; font-size: 13px; color: #5c4400; white-space: pre-wrap; line-height: 1.6;
+}
+.ai-note-small { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 .doc-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .doc-tab {
     padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd; background: #fff;
@@ -113,6 +118,25 @@
                 <div class="review-reason">Not screened yet. Use the Screen button on the applicants page.</div>
             {% endif %}
         </div>
+
+        {% if a.is_screened and a.screening_result == 'under_review' %}
+        <div class="review-card">
+            <h3>AI helper (advice only)</h3>
+            <div class="ai-note-small" style="margin-top:0;">
+                The group above was set by the fixed checklist. The AI can write a note to help you check the
+                unclear items. It cannot change the group.
+            </div>
+            <form method="post" action="/admin/job/{{ job.id }}/applicant/{{ a.id }}" style="margin-top:10px;">
+                <button type="submit" class="btn btn-primary btn-sm">Ask AI for a note</button>
+            </form>
+            {% if ai_note %}
+            <div class="ai-box">{{ ai_note }}</div>
+            <div class="ai-note-small">AI-written advice, not saved. HR makes the decision.</div>
+            {% elif ai_error %}
+            <div class="ai-note-small" style="color:var(--plum);">{{ ai_error }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
 
     <div>

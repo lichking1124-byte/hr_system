@@ -7,8 +7,8 @@ from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
-from ai_screener import screen_applicant
 from screening_rules import decide
+from ai_screener import advise_applicant
 from exporter import export_qualified, export_all
 from ad_generator import generate_job_ad_image
 from cloudinary_uploader import upload_file
@@ -460,7 +460,7 @@ def _applicant_documents(conn, applicant_id):
     ).fetchall()
 
 
-@app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>')
+@app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>', methods=['GET', 'POST'])
 def admin_applicant_detail(job_id, applicant_id):
     if 'admin' not in session:
         return redirect(url_for('admin_login'))
@@ -471,6 +471,20 @@ def admin_applicant_detail(job_id, applicant_id):
         'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
     ).fetchone()
     docs = _applicant_documents(conn, applicant_id) if applicant else []
+
+    # HR clicked "Ask AI for a note". The AI only advises; it never changes the group.
+    ai_note = None
+    ai_error = None
+    if (request.method == 'POST' and job and applicant
+            and applicant['screening_result'] == 'under_review'):
+        try:
+            documents_text = load_documents_text(conn, applicant_id)
+            open_items = json.loads(applicant['screening_weaknesses'] or '[]')
+            ai_note = advise_applicant(documents_text, build_job_specs(job), open_items)
+            log_action('ai.advice', 'applicant', applicant_id, 'advisory note requested')
+        except Exception as e:
+            print(f"AI note failed for applicant {applicant_id}: {e}")
+            ai_error = 'The AI helper could not be reached. Please try again in a moment.'
     conn.close()
 
     if not job or not applicant:
@@ -487,7 +501,8 @@ def admin_applicant_detail(job_id, applicant_id):
     selected = doc_list[wanted] if 0 <= wanted < len(doc_list) else (doc_list[0] if doc_list else None)
 
     return render_template('admin/applicant_detail.html',
-                           job=job, a=applicant, docs=doc_list, selected=selected)
+                           job=job, a=applicant, docs=doc_list, selected=selected,
+                           ai_note=ai_note, ai_error=ai_error)
 
 
 @app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/document/<int:idx>')
@@ -554,10 +569,10 @@ def admin_view_document(job_id, applicant_id, idx):
     return out
 
 
-def screen_one_applicant(conn, applicant, job_specs):
+def load_documents_text(conn, applicant_id):
     docs = conn.execute(
         'SELECT * FROM applicant_documents WHERE applicant_id = ?',
-        (applicant['id'],)
+        (applicant_id,)
     ).fetchall()
 
     documents_text = {}
@@ -567,11 +582,14 @@ def screen_one_applicant(conn, applicant, job_specs):
             documents_text[doc['document_type']] += "\n\n--- Additional document ---\n\n" + text
         else:
             documents_text[doc['document_type']] = text
+    return documents_text
 
-    # The AI only reads the documents and quotes evidence.
-    # Fixed rules (screening_rules.decide) make the actual decision.
-    extraction = screen_applicant(documents_text, job_specs)
-    outcome = decide(job_specs, extraction, documents_text)
+
+def screen_one_applicant(conn, applicant, job_specs):
+    documents_text = load_documents_text(conn, applicant['id'])
+
+    # Fixed checklist (plain code, no AI). Same documents -> same result, every time.
+    outcome = decide(job_specs, documents_text)
 
     conn.execute('''
         UPDATE applicants SET
@@ -603,7 +621,8 @@ def build_job_specs(job):
         'experience': job['experience'],
         'education': job['education'],
         'other_requirements': job['other_requirements'],
-        'mandatory_requirements': mandatory
+        'mandatory_requirements': mandatory,
+        'required_documents': json.loads(job['required_documents']) if job['required_documents'] else []
     }
 
 @app.route('/admin/job/<int:job_id>/screen')

@@ -1,24 +1,30 @@
 """
-Fixed rules that sort every screened applicant into one of three groups.
+Fixed checklist that sorts every screened applicant into one of three groups.
 
-The AI model never decides. It only answers, for each requirement, "do the
-documents show this?" and quotes the exact words it relied on. This file
-checks the quote really exists in the uploaded documents and applies the
-rules below. Same inputs always give the same result.
+This file is plain code. There is no AI and no randomness in it, so the same
+documents and the same posting always give the same result. Re-screening can
+never change an answer unless the documents or the posting changed.
 
-A requirement is VERIFIED only if the AI says it is met AND its quote is
-found, word for word, in one of the applicant's documents. Education marked
-mandatory must be proven by the Diploma / Transcript slot, not a resume.
+THE CHECKS (each one is a yes / no / unclear answer)
+1. Required documents  Every required document type has at least one file.
+                       ("(if applicable)" documents are optional.)
+2. Readable + right    Every uploaded file has readable text and looks like
+   slot                its slot (a diploma looks like a diploma, a resume
+                       like a resume).
+3. Education           The Diploma / Transcript text has degree words AND the
+                       main words of a degree the posting names.
+4. Skills, Experience, The posting's key terms are searched in the uploaded
+   Other               documents. HR sees exactly which terms were missing.
 
 THE THREE GROUPS
-QUALIFIED     Every requirement listed in the posting is verified, and every
-              uploaded document is readable and looks like its slot.
-DISQUALIFIED  The documents were readable, but a MANDATORY requirement is not
-              verified.
-UNDER REVIEW  Everything else: a document could not be read clearly (scan,
-              photo, damaged file) or looks like it is in the wrong slot, or
-              all mandatory requirements are verified but some other
-              requirement is not, or the posting lists nothing to check.
+QUALIFIED     Every check passes.
+DISQUALIFIED  Documents are readable, and a MANDATORY requirement clearly
+              fails: education with no matching degree in a readable diploma,
+              or a mandatory skills / experience / other category where NONE
+              of its key terms appear anywhere.
+UNDER REVIEW  Anything unclear: a missing or unreadable file (scan, photo),
+              a file in the wrong slot, some terms missing on a requirement
+              that is not clear-cut, or a posting with nothing to check.
               HR checks these by hand.
 """
 import re
@@ -29,6 +35,7 @@ CATEGORIES = [
     ('skills', 'Skills'),
     ('other', 'Other requirements'),
 ]
+TERM_CATEGORIES = ('experience', 'skills', 'other')
 
 EMPTY_VALUES = {'', 'none', 'n/a', 'na', 'not applicable', '-'}
 
@@ -40,54 +47,112 @@ DIPLOMA_MARKERS = ['diploma', 'conferred', 'transcript of records',
 RESUME_MARKERS = ['curriculum vitae', 'resume', 'work experience',
                   'objective', 'skills', 'references', 'employment history']
 
+MIN_READABLE_CHARS = 20
 
-def _squash(text):
-    """lowercase, letters and digits only, single spaces"""
-    return re.sub(r'[^a-z0-9]+', ' ', (text or '').lower()).strip()
+# Words that say a document shows a college / graduate degree.
+DEGREE_WORDS = {'bachelor', 'bachelors', 'master', 'masters', 'doctor', 'doctorate',
+                'associate', 'baccalaureate', 'degree'}
+
+# Filler words ignored when finding the "key terms" of a requirement.
+STOPWORDS = {
+    'and', 'or', 'of', 'in', 'the', 'a', 'an', 'to', 'for', 'with', 'at', 'on', 'any',
+    'related', 'relevant', 'similar', 'must', 'have', 'has', 'be', 'is', 'are', 'as',
+    'by', 'from', 'including', 'etc', 'preferably', 'ability', 'knowledge', 'good',
+    'basic', 'proficient', 'proficiency', 'familiarity', 'working', 'minimum', 'least',
+    'required', 'requirement', 'year', 'years', 'month', 'months', 'experience',
+    'skill', 'skills', 'field', 'work', 'one', 'two', 'three', 'five', 'ten',
+    'more', 'than', 'least', 'plus',
+}
+# Extra words ignored for education (the generic parts of a degree title).
+EDU_GENERIC = STOPWORDS | {
+    'bachelor', 'bachelors', 'master', 'masters', 'doctor', 'doctorate', 'degree',
+    'science', 'arts', 'course', 'graduate', 'holder', 'completion', 'bs', 'ba', 'ms',
+    'ma', 'college', 'university', 'associate', 'units', 'level', 'equivalent',
+    'program', 'major', 'post', 'studies', 'diploma', 'certificate', 'baccalaureate',
+    'completed', 'candidate',
+}
 
 
-WINDOW_SLACK = 12   # extra words allowed between the first and last word of a quote
+# ---------------------------------------------------------------- text helpers
+def _stem(word):
+    """Very small, readable stemmer so networks / networking / network match."""
+    w = word
+    if w.endswith('ies') and len(w) > 4:
+        w = w[:-3] + 'y'
+    elif w.endswith('s') and not w.endswith('ss') and len(w) > 3:
+        w = w[:-1]
+    if len(w) > 6 and w.endswith('ing'):
+        w = w[:-3]
+    elif len(w) > 5 and w.endswith('ed'):
+        w = w[:-2]
+    if len(w) > 4 and w.endswith('e'):
+        w = w[:-1]
+    return w
 
 
-def _ordered_within_window(ev_tokens, doc_tokens, slack=WINDOW_SLACK):
-    """
-    True if every word of the quote appears in the document, in the same order,
-    close together. This handles table cells (like the PDS) whose text wraps onto
-    a second line, which pushes the neighbouring row's words into the middle of it.
-    Words that are scattered far apart, or in a different order, do not match.
-    """
-    n = len(ev_tokens)
-    content = [t for t in ev_tokens if len(t) >= 4]
-    if n < 3 or len(content) < 2:
+def _tokens(text):
+    """lowercase words (letters and digits only), in order"""
+    return re.findall(r'[a-z0-9]+', (text or '').lower())
+
+
+def _stems(text):
+    return [_stem(t) for t in _tokens(text)]
+
+
+def _key_stems(phrase, ignore):
+    """The main words of a phrase, as stems. Drops filler words and bare numbers."""
+    out = []
+    for t in _tokens(phrase):
+        if t in ignore or t.isdigit() or len(t) < 2:
+            continue
+        s = _stem(t)
+        if s not in out:
+            out.append(s)
+    return out
+
+
+def _split_phrases(text):
+    """Split a posting field into separate terms at commas, semicolons, slashes,
+    new lines, brackets and the word 'and'."""
+    parts = re.split(r'[,;/\n\r•()]|\band\b', text or '', flags=re.I)
+    return [p.strip() for p in parts if p and p.strip()]
+
+
+def _present(term_stems, doc_stems, slack=8):
+    """True if all the term's main words appear close together (within the term
+    length + slack words) in the document. One word: it just has to appear."""
+    if not term_stems:
         return False
-    for start, tok in enumerate(doc_tokens):
-        if tok != ev_tokens[0]:
-            continue
-        limit = start + n + slack
-        pos = start
-        try:
-            for t in ev_tokens[1:]:
-                pos = doc_tokens.index(t, pos + 1, limit)
-        except ValueError:
-            continue
-        return True
+    need = set(term_stems)
+    if len(need) == 1:
+        return term_stems[0] in set(doc_stems)
+    span = len(term_stems) + slack
+    for i, s in enumerate(doc_stems):
+        if s in need and need <= set(doc_stems[i:i + span]):
+            return True
     return False
 
 
-def find_evidence(evidence, documents_text):
-    """Return the slot name whose document contains the quote, else None."""
-    ev = _squash(evidence)
-    if len(ev) < 8:
-        return None
-    squashed = {slot: _squash(text) for slot, text in documents_text.items()}
-    for slot, text in squashed.items():           # exact match first
-        if ev in text:
-            return slot
-    ev_tokens = ev.split()
-    for slot, text in squashed.items():           # then the wrapped-cell match
-        if _ordered_within_window(ev_tokens, text.split()):
-            return slot
-    return None
+def _listed(job_specs, key):
+    value = job_specs.get('other_requirements' if key == 'other' else key) or ''
+    return value.strip().lower() not in EMPTY_VALUES, value.strip()
+
+
+def _readable(text):
+    return len((text or '').strip()) >= MIN_READABLE_CHARS
+
+
+# ------------------------------------------------------------ document checks
+def check_required_documents(job_specs, documents_text):
+    """Return the list of required document types that have no uploaded file."""
+    uploaded = {s.strip().lower() for s in documents_text}
+    missing = []
+    for doc in job_specs.get('required_documents') or []:
+        if doc.strip().lower().endswith('(if applicable)'):
+            continue
+        if doc.strip().lower() not in uploaded:
+            missing.append(doc)
+    return missing
 
 
 def check_document_slots(documents_text):
@@ -95,7 +160,7 @@ def check_document_slots(documents_text):
     warnings = []
     for slot, text in documents_text.items():
         low = (text or '').lower()
-        if len(low.strip()) < 20:
+        if not _readable(low):
             warnings.append(
                 f'Document check: the file(s) in "{slot}" have no readable text '
                 f'(possibly a scan or photo). HR should open and review them.')
@@ -111,83 +176,137 @@ def check_document_slots(documents_text):
     return warnings
 
 
-def _quotes(item):
-    """The AI may return one quote (text) or a list of quotes."""
-    ev = item.get('evidence', '')
-    if isinstance(ev, str):
-        ev = [ev]
-    return [str(q).strip() for q in (ev or []) if str(q).strip()]
+# ------------------------------------------------------------------ the checks
+def _check_education(required_text, documents_text):
+    """
+    Returns (status, detail). status is 'pass', 'fail' (clear failure in a readable
+    diploma) or 'unclear' (no diploma / transcript to look at, or it cannot be read).
+    """
+    proof = {s: t for s, t in documents_text.items() if DIPLOMA_SLOT.search(s)}
+    if not proof:
+        return 'unclear', 'no Diploma / Transcript file was uploaded to check against'
+    readable = {s: t for s, t in proof.items() if _readable(t)}
+    if not readable:
+        return 'unclear', 'the Diploma / Transcript has no readable text (scan or photo)'
+
+    posting_words = set(_tokens(required_text))
+    needs_degree_words = bool(posting_words & DEGREE_WORDS)
+
+    # alternatives: "BSIT, BS Computer Science or any related course"
+    alternatives = []
+    for alt in re.split(r'[,;\n\r/]|\bor\b', required_text, flags=re.I):
+        key = _key_stems(alt, EDU_GENERIC)
+        if key:
+            alternatives.append((alt.strip(), key))
+
+    for slot, text in readable.items():
+        doc_tokens = set(_tokens(text))
+        doc_stems = _stems(text)
+        has_degree_words = bool(doc_tokens & DEGREE_WORDS)
+        if needs_degree_words and not has_degree_words:
+            continue
+        if not alternatives:
+            return 'pass', f'degree words found in "{slot}"'
+        for alt_text, key in alternatives:
+            if _present(key, doc_stems):
+                return 'pass', f'found in "{slot}": {" ".join(key)}'
+
+    names = ' / '.join(' '.join(k) for _, k in alternatives) or 'a degree'
+    looks_ok = any(any(m in t.lower() for m in DIPLOMA_MARKERS) for t in readable.values())
+    if not looks_ok:
+        return 'unclear', 'the Diploma / Transcript does not look like one, so it cannot be judged'
+    if needs_degree_words and not any(set(_tokens(t)) & DEGREE_WORDS for t in readable.values()):
+        return 'fail', 'the readable Diploma / Transcript shows no degree words (bachelor, master, etc.)'
+    return 'fail', f'the readable Diploma / Transcript does not contain the main words of the required degree ({names})'
 
 
-def _first_match(quotes, documents):
-    """(quote, slot) for the first quote found in the given documents, else (None, None)."""
-    for q in quotes:
-        slot = find_evidence(q, documents)
-        if slot:
-            return q, slot
-    return None, None
+def _check_terms(required_text, documents_text):
+    """
+    Returns (status, found_terms, missing_terms).
+    status: 'pass' (all found), 'none' (none found), 'partial', or 'noterms'.
+    """
+    terms = []
+    for p in _split_phrases(required_text):
+        key = _key_stems(p, STOPWORDS)
+        if key and (p, key) not in terms:
+            terms.append((p, key))
+    if not terms:
+        return 'noterms', [], []
+    # search each document on its own so words from two files are never glued together
+    per_doc = [_stems(t) for t in documents_text.values()]
+    found, missing = [], []
+    for phrase, key in terms:
+        if any(_present(key, d) for d in per_doc):
+            found.append(phrase)
+        else:
+            missing.append(phrase)
+    if not missing:
+        return 'pass', found, missing
+    if not found:
+        return 'none', found, missing
+    return 'partial', found, missing
 
 
-def _listed(job_specs, key):
-    value = job_specs.get(key if key != 'other' else 'other_requirements') or ''
-    return value.strip().lower() not in EMPTY_VALUES, value.strip()
-
-
-def decide(job_specs, extraction, documents_text):
+# ---------------------------------------------------------------- the decision
+def decide(job_specs, documents_text):
     mandatory = set(job_specs.get('mandatory_requirements') or [])
-    ai_items = (extraction or {}).get('requirements') or {}
 
-    checked = []      # (key, label, required_text, is_mandatory, verified, detail)
+    strengths, weaknesses, auto_fail = [], [], []
+    met = total = 0
+    unclear = False
+
+    # 1 + 2: documents
+    missing_docs = check_required_documents(job_specs, documents_text)
+    if missing_docs:
+        unclear = True
+        weaknesses.append('Required documents missing: ' + ', '.join(missing_docs))
+    elif job_specs.get('required_documents'):
+        strengths.append('Required documents: all uploaded')
+    doc_warnings = check_document_slots(documents_text)
+    weaknesses.extend(doc_warnings)
+    doc_problem = bool(doc_warnings) or bool(missing_docs)
+    if documents_text and not doc_warnings:
+        strengths.append('Documents: every file is readable and looks like its slot')
+
+    # 3 + 4: requirements
     for key, label in CATEGORIES:
         is_listed, required_text = _listed(job_specs, key)
         if not is_listed:
             continue
-        item = ai_items.get(key) or {}
-        claimed = item.get('met') is True
-        quotes = _quotes(item)
-        used_quote, slot = _first_match(quotes, documents_text) if claimed else (None, None)
-        verified = claimed and slot is not None
-        detail = ''
-        if claimed and key == 'education' and key in mandatory:
-            # Mandatory education must be proven by the diploma or transcript. Look there
-            # first, even when the PDS or resume contains the same words.
-            proof_docs = {s_: t_ for s_, t_ in documents_text.items() if DIPLOMA_SLOT.search(s_)}
-            proof_quote, proof_slot = _first_match(quotes, proof_docs)
-            if proof_slot:
-                used_quote, slot, verified = proof_quote, proof_slot, True
-                detail = f'found in "{proof_slot}"'
-            elif slot:
-                verified = False
-                detail = f'the proof was found in "{slot}", not in a diploma or transcript'
-        if not detail:
-            if verified:
-                detail = f'found in "{slot}"'
-            elif claimed:
-                shown = '" / "'.join(q[:100] for q in quotes[:2])
-                detail = f'the AI\'s quote was not found in any uploaded document: "{shown}"'
-            else:
-                detail = 'no supporting evidence found in the documents'
-        checked.append((key, label, required_text, key in mandatory, verified, detail,
-                        (used_quote or '').strip()))
-
-    strengths, weaknesses, auto_fail = [], [], []
-    for key, label, required, is_mand, verified, detail, evidence in checked:
+        total += 1
+        is_mand = key in mandatory
         tag = 'mandatory' if is_mand else 'optional'
-        if verified:
-            quote = f' — "{evidence[:120]}"' if evidence else ''
-            strengths.append(f'{label} ({tag}) verified: {required}{quote} [{detail}]')
+
+        if key == 'education':
+            status, detail = _check_education(required_text, documents_text)
+            if status == 'pass':
+                met += 1
+                strengths.append(f'{label} ({tag}) verified: {required_text} [{detail}]')
+            else:
+                weaknesses.append(f'{label} ({tag}) not verified: {required_text} [{detail}]')
+                if status == 'fail' and is_mand:
+                    auto_fail.append(f'Disqualified: mandatory education requirement not met ({required_text})')
+                else:
+                    unclear = True
         else:
-            weaknesses.append(f'{label} ({tag}) not verified: {required} [{detail}]')
-            if is_mand:
-                auto_fail.append(f'Disqualified: mandatory {label.lower()} requirement not verified ({required})')
-
-    doc_warnings = check_document_slots(documents_text)
-    weaknesses.extend(doc_warnings)
-
-    met = sum(1 for c in checked if c[4])
-    total = len(checked)
-    has_mandatory = any(c[3] for c in checked)
-    doc_problem = bool(doc_warnings)
+            status, found, missing = _check_terms(required_text, documents_text)
+            if status == 'pass':
+                met += 1
+                strengths.append(f'{label} ({tag}) verified: found {", ".join(found)}')
+            elif status == 'noterms':
+                unclear = True
+                weaknesses.append(f'{label} ({tag}) could not be checked by the system: {required_text} '
+                                  f'[no key terms could be taken from it. HR should check by hand]')
+            else:
+                line = f'{label} ({tag}) not verified: missing {", ".join(missing)}'
+                if found:
+                    line += f' [found: {", ".join(found)}]'
+                weaknesses.append(line)
+                if status == 'none' and is_mand and not doc_problem:
+                    auto_fail.append(f'Disqualified: mandatory {label.lower()} requirement not met '
+                                     f'(none of these found: {", ".join(missing)})')
+                else:
+                    unclear = True
 
     if total == 0:
         result = 'under_review'
@@ -195,23 +314,22 @@ def decide(job_specs, extraction, documents_text):
                   'so HR should review the documents.')
     elif met == total and not doc_problem:
         result = 'qualified'
-        reason = f'Qualified: all {total} listed requirement(s) were verified from the submitted documents.'
+        reason = f'Qualified: all {total} listed requirement(s) were found in the submitted documents.'
     elif auto_fail and not doc_problem:
         result = 'unqualified'
-        reason = (f'Disqualified: {len(auto_fail)} mandatory requirement(s) could not be verified from '
-                  f'the submitted documents. {met} of {total} listed requirements verified.')
+        reason = (f'Disqualified: {len(auto_fail)} mandatory requirement(s) clearly not met in the '
+                  f'readable documents. {met} of {total} listed requirements verified.')
     else:
         result = 'under_review'
-        if doc_problem:
+        if missing_docs:
+            reason = 'Under review: some required documents are missing. HR should check.'
+        elif doc_warnings:
             reason = ('Under review: some documents could not be read clearly or may be in the wrong '
                       'slot, so the system cannot confirm every requirement. HR should check those files.')
-        elif has_mandatory:
-            reason = (f'Under review: all mandatory requirements were verified, but {total - met} other '
-                      f'requirement(s) could not be verified.')
         else:
-            reason = (f'Under review: {total - met} of {total} requirement(s) could not be verified and '
-                      f'none is marked mandatory.')
-    reason += ' Result set by fixed rules; the AI only read the documents.'
+            reason = (f'Under review: {total - met} of {total} requirement(s) could not be fully '
+                      f'verified. See the checklist for the exact missing items.')
+    reason += ' Result set by a fixed checklist (plain code, no AI).'
 
     return {
         'result': result,
