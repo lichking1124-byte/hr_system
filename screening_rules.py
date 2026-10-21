@@ -46,13 +46,46 @@ def _squash(text):
     return re.sub(r'[^a-z0-9]+', ' ', (text or '').lower()).strip()
 
 
+WINDOW_SLACK = 12   # extra words allowed between the first and last word of a quote
+
+
+def _ordered_within_window(ev_tokens, doc_tokens, slack=WINDOW_SLACK):
+    """
+    True if every word of the quote appears in the document, in the same order,
+    close together. This handles table cells (like the PDS) whose text wraps onto
+    a second line, which pushes the neighbouring row's words into the middle of it.
+    Words that are scattered far apart, or in a different order, do not match.
+    """
+    n = len(ev_tokens)
+    content = [t for t in ev_tokens if len(t) >= 4]
+    if n < 3 or len(content) < 2:
+        return False
+    for start, tok in enumerate(doc_tokens):
+        if tok != ev_tokens[0]:
+            continue
+        limit = start + n + slack
+        pos = start
+        try:
+            for t in ev_tokens[1:]:
+                pos = doc_tokens.index(t, pos + 1, limit)
+        except ValueError:
+            continue
+        return True
+    return False
+
+
 def find_evidence(evidence, documents_text):
     """Return the slot name whose document contains the quote, else None."""
     ev = _squash(evidence)
     if len(ev) < 8:
         return None
-    for slot, text in documents_text.items():
-        if ev in _squash(text):
+    squashed = {slot: _squash(text) for slot, text in documents_text.items()}
+    for slot, text in squashed.items():           # exact match first
+        if ev in text:
+            return slot
+    ev_tokens = ev.split()
+    for slot, text in squashed.items():           # then the wrapped-cell match
+        if _ordered_within_window(ev_tokens, text.split()):
             return slot
     return None
 

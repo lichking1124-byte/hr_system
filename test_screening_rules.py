@@ -76,6 +76,19 @@ class ThreeGroups(unittest.TestCase):
     def test_quote_matching_ignores_case_and_punctuation(self):
         self.assertEqual(find_evidence('bachelor of science, in information technology.', DOCS), 'Diploma')
 
+    def test_quote_survives_a_wrapped_pds_cell(self):
+        pds = ("III. EDUCATIONAL BACKGROUND ELEMENTARY SAMPLE ELEMENTARY SCHOOL 2008 2014 "
+               "BACHELOR OF SCIENCE IN INFORMATION\nCOLLEGE BULACAN STATE UNIVERSITY 2020 2024 2024 CUM LAUDE\n"
+               "TECHNOLOGY\nGRADUATE STUDIES")
+        self.assertEqual(find_evidence('BACHELOR OF SCIENCE IN INFORMATION TECHNOLOGY', {'Personal Data Sheet (PDS)': pds}),
+                         'Personal Data Sheet (PDS)')
+
+    def test_invented_or_scattered_quotes_still_fail(self):
+        doc = {'Resume': 'Bachelor of Arts. ' + 'filler words about nothing relevant here ' * 10 + 'Science Information Technology'}
+        self.assertIsNone(find_evidence('Bachelor of Science in Information Technology', doc))
+        self.assertIsNone(find_evidence('Master of Science in Computer Science from MIT', {'Resume': RESUME}))
+        self.assertIsNone(find_evidence('Technology Information Science of Bachelor', {'Diploma': DIPLOMA}))
+
     def test_same_input_same_output(self):
         a = ai(education=EDU, skills=SKILL)
         first = decide(JOB, a, DOCS)
