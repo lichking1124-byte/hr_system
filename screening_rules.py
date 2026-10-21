@@ -136,7 +136,8 @@ def decide(job_specs, extraction, documents_text):
         elif verified:
             detail = f'found in "{slot}"'
         elif claimed:
-            detail = 'the AI\'s quote was not found in any uploaded document'
+            quote = (item.get('evidence') or '').strip()[:100]
+            detail = f'the AI\'s quote was not found in any uploaded document: "{quote}"'
         else:
             detail = 'no supporting evidence found in the documents'
         checked.append((key, label, required_text, key in mandatory, verified, detail,

@@ -89,6 +89,10 @@ class ThreeGroups(unittest.TestCase):
         self.assertIsNone(find_evidence('Master of Science in Computer Science from MIT', {'Resume': RESUME}))
         self.assertIsNone(find_evidence('Technology Information Science of Bachelor', {'Diploma': DIPLOMA}))
 
+    def test_failed_quote_is_shown_to_hr(self):
+        r = decide(JOB, ai(education='Master of Science in Computer Science from MIT'), DOCS)
+        self.assertTrue(any('Master of Science in Computer Science' in w for w in r['weaknesses']))
+
     def test_same_input_same_output(self):
         a = ai(education=EDU, skills=SKILL)
         first = decide(JOB, a, DOCS)
