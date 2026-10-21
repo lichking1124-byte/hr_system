@@ -48,11 +48,24 @@
         </p>
 
         {% for doc in required_docs %}
-        <label>{{ doc }} *</label>
+        {% set optional = doc.endswith('(if applicable)') %}
+        <label>{{ doc }}{% if not optional %} *{% endif %}</label>
         <input type="file" name="{{ doc.replace(' ', '_').lower() }}"
-               accept=".pdf" multiple required>
-        <p class="file-note">PDF files only</p>
+               accept=".pdf" multiple {% if not optional %}required{% endif %}>
+        <p class="file-note">PDF files only{% if hints and hints.get(doc) %} · {{ hints.get(doc) }}{% endif %}{% if optional %} · Upload only if it applies to you{% endif %}</p>
         {% endfor %}
+
+        <div class="section-divider">Data Privacy Consent</div>
+        <label style="display:flex; gap:10px; align-items:flex-start; font-weight:normal; line-height:1.5; font-size:13px; color:#444;">
+            <input type="checkbox" name="consent" value="yes" required style="width:auto; margin-top:3px;">
+            <span>
+                I certify that the information and documents I am submitting are true and correct.
+                I consent to Bulacan State University collecting, processing, storing and using my personal
+                information solely for recruitment and selection, in accordance with the Data Privacy Act of 2012
+                (RA 10173) and the University's data privacy policies. I authorize the University to verify
+                the information and documents I have submitted.
+            </span>
+        </label>
 
         <button type="submit" class="btn btn-gold"
                 style="width:100%; padding:14px; font-size:16px; margin-top:25px;">

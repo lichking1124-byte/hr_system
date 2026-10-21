@@ -84,6 +84,16 @@
             <input name="title" placeholder="e.g. Administrative Officer"
                    value="{{ job.title if job else '' }}" required>
 
+            <label>Position Type</label>
+            <select name="position_type" id="position_type" onchange="applyPreset()">
+                <option value="" {% if not job or not job.position_type %}selected{% endif %}>Custom (I will choose the documents)</option>
+                <option value="academic" {% if job and job.position_type == 'academic' %}selected{% endif %}>Academic position</option>
+                <option value="non_academic" {% if job and job.position_type == 'non_academic' %}selected{% endif %}>Non-academic position</option>
+            </select>
+            <div style="font-size:12px; color:#888; margin-top:4px;">
+                Choosing Academic or Non-academic fills in HR's official list of required documents. You can still edit it.
+            </div>
+
             <label>Application Deadline</label>
             <input type="date" name="deadline"
                    value="{{ job.deadline if job and job.deadline else '' }}">
@@ -183,8 +193,9 @@
                 'Government ID', 'PRC License', 'Medical Certificate',
                 'Birth Certificate', 'NBI Clearance'] %}
                 {% set selected_docs = required_docs if required_docs is defined else [] %}
+                {% set base_docs = presets[job.position_type] if (job and job.position_type and job.position_type in presets) else default_docs %}
 
-                {% for doc in default_docs %}
+                {% for doc in base_docs %}
                 <div class="doc-item">
                     <input type="checkbox" name="required_documents" value="{{ doc }}"
                            {% if doc in selected_docs %}checked{% endif %}>
@@ -193,7 +204,7 @@
                 {% endfor %}
 
                 {% for doc in selected_docs %}
-                    {% if doc not in default_docs %}
+                    {% if doc not in base_docs %}
                     <div class="doc-item">
                         <input type="checkbox" name="required_documents"
                                value="{{ doc }}" checked>
@@ -235,19 +246,45 @@
 </div>
 
 <script>
+const PRESETS = {{ presets | tojson }};
+let lastType = document.getElementById('position_type').value;
+
+function addDocItem(name, checked) {
+    const div = document.createElement('div');
+    div.className = 'doc-item';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.name = 'required_documents';
+    box.value = name;
+    box.checked = checked;
+    box.style.width = 'auto';
+    box.style.accentColor = '#671E1E';
+    const label = document.createElement('span');
+    label.textContent = name;
+    div.appendChild(box);
+    div.appendChild(label);
+    document.querySelector('.doc-list').appendChild(div);
+}
+
 function addCustomDoc() {
     const input = document.getElementById('custom-doc');
     const val = input.value.trim();
     if (!val) return;
-    const div = document.createElement('div');
-    div.className = 'doc-item';
-    div.innerHTML = `
-        <input type="checkbox" name="required_documents" value="${val}" checked
-               style="width:auto; accent-color:#671E1E;">
-        <span>${val}</span>
-    `;
-    document.querySelector('.doc-list').appendChild(div);
+    addDocItem(val, true);
     input.value = '';
+}
+
+function applyPreset() {
+    const select = document.getElementById('position_type');
+    const preset = PRESETS[select.value];
+    if (!preset) { lastType = select.value; return; }
+    if (!confirm("Replace the required documents with HR's official list for this position type?")) {
+        select.value = lastType;
+        return;
+    }
+    lastType = select.value;
+    document.querySelector('.doc-list').innerHTML = '';
+    preset.forEach(name => addDocItem(name, true));
 }
 </script>
 {% endblock %}

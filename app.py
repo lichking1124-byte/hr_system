@@ -16,6 +16,7 @@ from config import SECRET_KEY, CAMPUSES
 from auth import init_auth, log_action, is_locked_out, utcnow, LOCKOUT_MINUTES
 from accounts import accounts
 from passwords import verify_password
+from doc_presets import PRESETS, DOC_HINTS, VALID_TYPES
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -27,6 +28,27 @@ except OSError:
     pass
 
 init_db()
+
+
+def ensure_position_type_column():
+    """Adds job_postings.position_type (academic / non_academic) if it is missing."""
+    conn = get_db()
+    try:
+        conn.execute("ALTER TABLE job_postings ADD COLUMN IF NOT EXISTS position_type TEXT")
+        conn.commit()
+    except Exception as e:
+        print(f"position_type column check failed: {e}")
+    finally:
+        conn.close()
+
+
+ensure_position_type_column()
+
+
+def clean_position_type(value):
+    return value if value in VALID_TYPES else None
+
+
 init_auth(app)
 app.register_blueprint(accounts)
 
@@ -91,10 +113,18 @@ def apply(job_id):
         allowed_types = ('.pdf', '.docx')
         for doc_type in required_docs:
             field_name = doc_type.replace(' ', '_').lower()
-            for file in request.files.getlist(field_name):
-                if file and file.filename and os.path.splitext(file.filename)[1].lower() not in allowed_types:
+            files = [f for f in request.files.getlist(field_name) if f and f.filename]
+            if not files and not doc_type.endswith('(if applicable)'):
+                return (f'"{doc_type}" is required. Incomplete applications cannot be submitted. '
+                        f'Go back and try again.', 400)
+            for file in files:
+                if os.path.splitext(file.filename)[1].lower() not in allowed_types:
                     return (f'"{file.filename}" is not accepted. Please upload PDF or Word (.docx) '
                             f'files only. Go back and try again.', 400)
+
+        if not request.form.get('consent'):
+            return ('Please tick the data privacy consent box to submit your application. '
+                    'Go back and try again.', 400)
 
         full_name = request.form['full_name']
         email = request.form['email']
@@ -132,12 +162,13 @@ def apply(job_id):
         conn.commit()
         conn.close()
         log_action('application.submit', 'applicant', applicant_id,
-                   f'job_id={job_id}', username='(applicant)', role='applicant')
+                   f'job_id={job_id}; data privacy consent given', username='(applicant)', role='applicant')
 
         return render_template('applicant/success.html', name=full_name, job=job,
                                control_number=control_number)
 
-    return render_template('applicant/apply.html', job=job, required_docs=required_docs)
+    return render_template('applicant/apply.html', job=job, required_docs=required_docs,
+                           hints=DOC_HINTS)
 
 @app.route('/status', methods=['GET', 'POST'])
 def check_status():
@@ -261,8 +292,8 @@ def admin_new_job():
             INSERT INTO job_postings
             (campus, title, description, skills, experience,
              education, other_requirements, required_documents, mandatory_requirements,
-             deadline)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             deadline, position_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             request.form['campus'],
             request.form['title'],
@@ -273,14 +304,16 @@ def admin_new_job():
             request.form['other_requirements'],
             json.dumps(required_docs),
             json.dumps(mandatory),
-            request.form.get('deadline') or None
+            request.form.get('deadline') or None,
+            clean_position_type(request.form.get('position_type'))
         ))
         conn.commit()
         conn.close()
         flash('Job posting created successfully!')
         return redirect(url_for('admin_home'))
 
-    return render_template('admin/job_form.html', job=None, campuses=CAMPUSES, mandatory=[])
+    return render_template('admin/job_form.html', job=None, campuses=CAMPUSES, mandatory=[],
+                           presets=PRESETS)
 
 @app.route('/admin/job/<int:job_id>/edit', methods=['GET', 'POST'])
 def admin_edit_job(job_id):
@@ -309,7 +342,7 @@ def admin_edit_job(job_id):
             campus=?, title=?, description=?, skills=?,
             experience=?, education=?, other_requirements=?,
             required_documents=?, mandatory_requirements=?, is_active=?,
-            deadline=?
+            deadline=?, position_type=?
             WHERE id=?
         ''', (
             request.form['campus'],
@@ -323,6 +356,7 @@ def admin_edit_job(job_id):
             json.dumps(mandatory),
             1 if 'is_active' in request.form else 0,
             request.form.get('deadline') or None,
+            clean_position_type(request.form.get('position_type')),
             job_id
         ))
         conn.commit()
@@ -333,7 +367,7 @@ def admin_edit_job(job_id):
     required_docs = json.loads(job['required_documents']) if job['required_documents'] else []
     mandatory = json.loads(job['mandatory_requirements']) if job['mandatory_requirements'] else []
     return render_template('admin/job_form.html', job=job, required_docs=required_docs,
-                           mandatory=mandatory, campuses=CAMPUSES)
+                           mandatory=mandatory, campuses=CAMPUSES, presets=PRESETS)
 
 @app.route('/admin/job/<int:job_id>/delete', methods=['POST'])
 def admin_delete_job(job_id):
