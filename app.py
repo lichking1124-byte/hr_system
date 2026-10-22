@@ -480,7 +480,8 @@ def admin_applicant_detail(job_id, applicant_id):
         try:
             documents_text = load_documents_text(conn, applicant_id)
             open_items = json.loads(applicant['screening_weaknesses'] or '[]')
-            ai_note = advise_applicant(documents_text, build_job_specs(job), open_items)
+            verified_items = json.loads(applicant['screening_strengths'] or '[]')
+            ai_note = advise_applicant(documents_text, build_job_specs(job), open_items, verified_items)
             log_action('ai.advice', 'applicant', applicant_id, 'advisory note requested')
         except Exception as e:
             print(f"AI note failed for applicant {applicant_id}: {e}")
