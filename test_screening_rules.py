@@ -282,5 +282,105 @@ class RealPDS(unittest.TestCase):
         self.assertEqual([(str(a), str(b)) for a, b, _ in merged], [('2025-07-25', '2025-08-30')])
 
 
+class AIReadingIsChecked(unittest.TestCase):
+    """The AI reads; the code checks every claim against the documents before using it."""
+    JOB = dict(SAMPLE_JOB, other_requirements='', mandatory_requirements=['education', 'experience', 'skills'],
+               required_documents=[])
+    RESUME_MESSY = ("RESUME\nObjective\nIT support.\nSkills\nMS Office\n"
+                    "Work Experience\nHelp Desk Assistant, XYZ Corp, Jan-Mar 2026\nRepaired computers and answered IT support calls.\n"
+                    "Education\nBSIT, Sample State University, 2020 to 2024\nReferences\nOn request")
+
+    def docs(self, resume=None):
+        return {'Diploma': SAMPLE_DOCS['Diploma'], 'Resume': resume or self.RESUME_MESSY}
+
+    def good_job(self, **over):
+        j = {'title': 'Help Desk Assistant', 'employer': 'XYZ Corp', 'start': '2026-01', 'end': '2026-06',
+             'quote': 'Help Desk Assistant, XYZ Corp, Jan-Mar 2026\nRepaired computers and answered IT support calls.'}
+        j.update(over)
+        return j
+
+    def test_ai_reads_a_date_format_the_code_cannot_parse(self):
+        # "Jan-Mar 2026" holds only one full date, so the code alone finds no 6 months
+        job = dict(self.JOB, skills='', experience='At least 2 months in any IT support role')
+        self.assertEqual(decide(job, self.docs(), AS_OF)['result'], 'unqualified')
+        reading = {'jobs': [self.good_job(end='2026-03')], 'terms': []}
+        r = decide(job, self.docs(), AS_OF, reading)
+        self.assertEqual(r['result'], 'qualified')
+        self.assertTrue(any('AI-read' in s for s in r['strengths']))
+
+    def test_invented_job_is_rejected(self):
+        job = dict(self.JOB, skills='')
+        reading = {'jobs': [self.good_job(title='Senior IT Support', start='2020-01', end='2026-01',
+                                          quote='Senior IT Support Engineer, Google, January 2020 to January 2026')], 'terms': []}
+        r = decide(job, self.docs(), AS_OF, reading)
+        self.assertEqual(r['result'], 'unqualified')
+        self.assertTrue(any('not found' in x for x in r['ai_rejected']))
+
+    def test_a_job_quoted_from_the_education_line_is_rejected(self):
+        job = dict(self.JOB, skills='', experience='At least 6 months of IT work')
+        reading = {'jobs': [{'title': 'BSIT student', 'start': '2020-06', 'end': '2024-03',
+                             'quote': 'BSIT, Sample State University, 2020 to 2024'}], 'terms': []}
+        r = decide(job, self.docs(), AS_OF, reading)
+        self.assertNotEqual(r['result'], 'qualified')
+        self.assertEqual(len(r['ai_rejected']), 1)
+
+    def test_dates_that_disagree_with_the_quote_are_rejected(self):
+        job = dict(self.JOB, skills='', experience='At least 6 months in any IT support role')
+        reading = {'jobs': [self.good_job(start='2020-01', end='2026-03')], 'terms': []}   # quote says 2026 only
+        r = decide(job, self.docs(), AS_OF, reading)
+        self.assertEqual(r['result'], 'unqualified')
+        self.assertTrue(any('do not match' in x for x in r['ai_rejected']))
+
+    def test_present_must_be_written_in_the_quote(self):
+        job = dict(self.JOB, skills='', experience='At least 6 months in any IT support role')
+        reading = {'jobs': [self.good_job(end='present')], 'terms': []}    # quote has no "present"
+        r = decide(job, self.docs(), AS_OF, reading)
+        self.assertEqual(r['result'], 'unqualified')
+        self.assertTrue(any('present' in x for x in r['ai_rejected']))
+
+    def test_ai_can_credit_a_skill_the_keywords_missed_only_with_a_real_quote(self):
+        docs = {'Diploma': SAMPLE_DOCS['Diploma'], 'Resume': 'RESUME\nSkills\nRepairs and diagnoses faulty PCs\nWork Experience\nNone\nReferences\nx'}
+        job = dict(self.JOB, experience='', skills='computer troubleshooting')
+        self.assertEqual(decide(job, docs, AS_OF)['result'], 'unqualified')
+        real = {'jobs': [], 'terms': [{'requirement': 'computer troubleshooting', 'quote': 'Repairs and diagnoses faulty PCs'}]}
+        r = decide(job, docs, AS_OF, real)
+        self.assertEqual(r['result'], 'qualified')
+        self.assertTrue(any('read by AI' in s for s in r['strengths']))
+        fake = {'jobs': [], 'terms': [{'requirement': 'computer troubleshooting', 'quote': 'Expert PC troubleshooter at Microsoft'}]}
+        self.assertEqual(decide(job, docs, AS_OF, fake)['result'], 'unqualified')
+
+    def test_ai_job_and_code_job_that_overlap_are_counted_once(self):
+        job = dict(self.JOB, skills='', experience='At least 6 months in any IT support role')
+        resume = ("RESUME\nWork Experience\nIT Support Staff, XYZ Corp, January 2026 to June 2026\nIT support.\nEducation\nBSIT\nReferences\nx")
+        reading = {'jobs': [{'title': 'IT Support Staff', 'start': '2026-01', 'end': '2026-06',
+                             'quote': 'IT Support Staff, XYZ Corp, January 2026 to June 2026'}], 'terms': []}
+        r = decide(job, self.docs(resume), AS_OF, reading)
+        self.assertEqual(r['result'], 'qualified')
+        self.assertTrue(any('6.0 months' in s or '5.9 months' in s for s in r['strengths']))
+
+    def test_a_made_up_title_cannot_make_an_unrelated_job_count(self):
+        job = dict(self.JOB, skills='', experience='At least 6 months in any IT support role')
+        resume = ("RESUME\nWork Experience\nCashier, Sample Grocery Store, January 2024 to December 2025\n"
+                  "Handled cash and stock.\nEducation\nBSIT\nReferences\nx")
+        reading = {'jobs': [{'title': 'IT Support Specialist', 'employer': 'Sample Grocery Store',
+                             'start': '2024-01', 'end': '2025-12',
+                             'quote': 'Cashier, Sample Grocery Store, January 2024 to December 2025\nHandled cash and stock.'}],
+                   'terms': []}
+        r = decide(job, self.docs(resume), AS_OF, reading)
+        self.assertEqual(r['result'], 'unqualified')
+
+    def test_same_reading_same_result(self):
+        job = dict(self.JOB, skills='', experience='At least 2 months in any IT support role')
+        reading = {'jobs': [self.good_job(end='2026-03')], 'terms': []}
+        first = decide(job, self.docs(), AS_OF, reading)
+        for _ in range(100):
+            self.assertEqual(decide(job, self.docs(), AS_OF, reading), first)
+
+    def test_garbage_reading_changes_nothing(self):
+        for junk in (None, {}, {'jobs': 'x', 'terms': 5}, {'jobs': [1, 'a', None], 'terms': [None]}, 'hello', []):
+            self.assertEqual(decide(self.JOB, self.docs(), AS_OF, junk)['result'],
+                             decide(self.JOB, self.docs(), AS_OF)['result'])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -229,13 +229,16 @@ def _check_education(required_text, documents_text):
     return 'fail', f'the readable Diploma / Transcript does not contain the main words of the required degree ({names})'
 
 
-def _check_terms(required_text, documents_text):
+def _check_terms(required_text, documents_text, ai_terms=None):
     """
     Returns (status, found_terms, missing_terms, declarations).
     status: 'pass' (all found), 'none' (none found), 'partial', 'noterms',
             or 'declarations_only' (the posting item is only a "willingness" promise).
     A term written as "A or B" is found if A or B is found.
+    ai_terms: {normalised posting term: (quote, slot)} for terms the AI read from the documents
+    AND whose quote was found word for word in an uploaded document (see verify_reading).
     """
+    ai_terms = ai_terms or {}
     terms, declarations = [], []
     for p in _split_phrases(required_text):
         if DECLARATION.match(p):
@@ -256,6 +259,9 @@ def _check_terms(required_text, documents_text):
     for phrase, alts in terms:
         if any(_present(key, d) for key in alts for d in per_doc):
             found.append(phrase)
+        elif _norm(phrase) in ai_terms:
+            quote, slot = ai_terms[_norm(phrase)]
+            found.append(f'{phrase} (read by AI, quote checked in "{slot}": "{quote[:80]}")')
         else:
             missing.append(phrase)
     if not missing:
@@ -392,7 +398,7 @@ def _entry_start(text, pos):
     return start
 
 
-def measure_experience(documents_text, term_alternatives, as_of):
+def measure_experience(documents_text, term_alternatives, as_of, extra=None):
     """
     Returns (months, ranges, ambiguous). months: merged months of related work.
     ranges: [(start, end, slot)] that were counted. ambiguous: year-only ranges that
@@ -427,6 +433,13 @@ def measure_experience(documents_text, term_alternatives, as_of):
             if end < start:
                 continue
             counted.append((start, end, slot))
+    for start, end, slot, text in (extra or []):      # jobs the AI read and the code verified
+        ctx = set(_stems(text))
+        if term_alternatives and not any(set(k) <= ctx for k in term_alternatives):
+            continue
+        end = min(end, as_of)
+        if end >= start:
+            counted.append((start, end, slot))
     counted.sort()
     merged = []
     for st, en, slot in counted:
@@ -445,7 +458,7 @@ def _fmt(d):
     return d.strftime('%b %Y')
 
 
-def _check_experience(required_text, documents_text, as_of):
+def _check_experience(required_text, documents_text, as_of, extra=None):
     """Returns (status, detail): 'pass', 'fail' (clear) or 'unclear'."""
     need = required_months(required_text)
     alts = []
@@ -456,7 +469,7 @@ def _check_experience(required_text, documents_text, as_of):
             key = _key_stems(alt, STOPWORDS)
             if key:
                 alts.append(key)
-    months, merged, ambiguous = measure_experience(documents_text, alts, as_of)
+    months, merged, ambiguous = measure_experience(documents_text, alts, as_of, extra)
     shown = '; '.join(f'{_fmt(st)} to {_fmt(en)} ({" + ".join(sl)})' for st, en, sl in merged)
     if months + TOLERANCE_MONTHS >= need:
         return 'pass', f'{months:.1f} months of related work found, {need:g} needed: {shown}'
@@ -468,9 +481,168 @@ def _check_experience(required_text, documents_text, as_of):
     return 'fail', f'no dated related work experience found, {need:g} months needed'
 
 
+# ------------------------------------------------- checking what the AI read
+# The AI reads the documents and returns facts with exact quotes. NOTHING the AI says is
+# trusted until this code has checked it:
+#   * the quote must exist, word for word, in an uploaded document
+#   * a job must be quoted from a work-experience place (never from education or training)
+#   * a job's dates must agree with the dates written in its own quote
+#   * "present" is only accepted if the quote says so
+# A claim that fails a check is thrown away and listed as rejected.
+
+def _norm(text):
+    return ' '.join(_tokens(text))
+
+
+WINDOW_SLACK = 12     # extra words allowed inside a quote when a PDS table cell wrapped onto two lines
+
+
+def _ordered_within_window(ev_tokens, doc_tokens, slack=WINDOW_SLACK):
+    n = len(ev_tokens)
+    content = [t for t in ev_tokens if len(t) >= 4]
+    if n < 3 or len(content) < 2:
+        return False
+    for start, tok in enumerate(doc_tokens):
+        if tok != ev_tokens[0]:
+            continue
+        limit = start + n + slack
+        pos = start
+        try:
+            for t in ev_tokens[1:]:
+                pos = doc_tokens.index(t, pos + 1, limit)
+        except ValueError:
+            continue
+        return True
+    return False
+
+
+def find_evidence(quote, documents_text):
+    """The slot whose document contains the quote (ignoring case and punctuation), else None."""
+    ev = _norm(quote)
+    if len(ev) < 8:
+        return None
+    normed = {slot: _norm(text) for slot, text in documents_text.items()}
+    for slot, text in normed.items():
+        if ev in text:
+            return slot
+    ev_tokens = ev.split()
+    for slot, text in normed.items():
+        if _ordered_within_window(ev_tokens, text.split()):
+            return slot
+    return None
+
+
+def posting_terms(job_specs):
+    """The skill / other terms of the posting, exactly as the checklist splits them.
+    These are what the AI is asked to look for."""
+    out = []
+    for key in ('skills', 'other_requirements'):
+        listed, text = _listed(job_specs, key)
+        if not listed:
+            continue
+        for p in _split_phrases(text):
+            if not DECLARATION.match(p) and p not in out:
+                out.append(p)
+    return out
+
+
+def _parse_ai_date(value):
+    """'2024-07', '2024-07-01' or 'present' -> ('now',) or (year, month, day-or-None), else None."""
+    v = str(value or '').strip().lower()
+    if v in ('present', 'current', 'now', 'to date', 'today', 'ongoing'):
+        return ('now',)
+    m = re.fullmatch(r'(\d{4})-(\d{1,2})(?:-(\d{1,2}))?', v)
+    if not m:
+        return None
+    y, mo = int(m.group(1)), int(m.group(2))
+    d = int(m.group(3)) if m.group(3) else None
+    if not 1 <= mo <= 12 or (d is not None and not 1 <= d <= 31):
+        return None
+    return (y, mo, d)
+
+
+def _date_in_quote(parsed, quote):
+    """Does the quote really show this year and month?"""
+    y, mo, _ = parsed
+    seen = {(t[1], t[2]) for _, _, t in _date_tokens(quote) if t[0] == 'date' and t[2]}
+    if (y, mo) in seen:
+        return True
+    month_word = next(k for k, v in _MONTHS.items() if v == mo)
+    low = quote.lower()
+    return str(y) in re.findall(r'\b\d{4}\b', low) and re.search(r'(?<![a-z])' + month_word, low) is not None
+
+
+PRESENT_WORDS = re.compile(r'\b(present|current|currently|to date|now|ongoing)\b', re.I)
+
+
+def verify_reading(reading, documents_text, as_of):
+    """
+    Check the AI's reading against the real documents.
+    Returns {'jobs': [(start, end, slot_label, text)], 'terms': {norm_term: (quote, slot)},
+             'rejected': [reason], 'accepted': int}.
+    """
+    out = {'jobs': [], 'terms': {}, 'rejected': [], 'accepted': 0}
+    if not isinstance(reading, dict):
+        return out
+    work = {}
+    for slot, text in _work_sources(documents_text):
+        work[slot] = (work.get(slot, '') + '\n' + text) if slot in work else text
+
+    jobs = reading.get('jobs')
+    terms = reading.get('terms')
+    for j in (jobs if isinstance(jobs, list) else []):
+        if not isinstance(j, dict):
+            continue
+        title = str(j.get('title') or '').strip()
+        quote = str(j.get('quote') or '').strip()
+        label = f'"{title or quote[:40]}"'
+        slot = find_evidence(quote, work)
+        if not slot:
+            out['rejected'].append(f'job {label}: its quote was not found in a work-experience part of any document')
+            continue
+        a = _parse_ai_date(j.get('start'))
+        b = _parse_ai_date(j.get('end'))
+        if not a or a == ('now',) or not b:
+            out['rejected'].append(f'job {label}: its dates could not be understood')
+            continue
+        if not _date_in_quote(a, quote) or (b != ('now',) and not _date_in_quote(b, quote)):
+            out['rejected'].append(f'job {label}: its dates do not match the dates written in its quote')
+            continue
+        if b == ('now',) and not PRESENT_WORDS.search(quote):
+            out['rejected'].append(f'job {label}: "present" is not written in its quote')
+            continue
+        start = date(a[0], a[1], a[2] or 1)
+        if b == ('now',):
+            end = as_of
+        else:
+            end = date(b[0], b[1], b[2] or calendar.monthrange(b[0], b[1])[1])
+        if end < start or start > as_of:
+            out['rejected'].append(f'job {label}: its dates are not in a valid order')
+            continue
+        # relevance is judged only from the document's own words (the quote), never from the AI's title
+        out['jobs'].append((start, end, f'{slot} (AI-read)', quote))
+        out['accepted'] += 1
+
+    for t in (terms if isinstance(terms, list) else []):
+        if not isinstance(t, dict):
+            continue
+        req = str(t.get('requirement') or '').strip()
+        quote = str(t.get('quote') or '').strip()
+        if not req or not quote:
+            continue
+        slot = find_evidence(quote, documents_text)
+        if slot:
+            out['terms'][_norm(req)] = (quote, slot)
+            out['accepted'] += 1
+        else:
+            out['rejected'].append(f'skill "{req}": its quote was not found in any uploaded document')
+    return out
+
+
 # ---------------------------------------------------------------- the decision
-def decide(job_specs, documents_text, as_of=None):
+def decide(job_specs, documents_text, as_of=None, reading=None):
     as_of = as_of or date.today()
+    verified = verify_reading(reading, documents_text, as_of) if reading else None
     mandatory = set(job_specs.get('mandatory_requirements') or [])
 
     strengths, weaknesses, auto_fail = [], [], []
@@ -517,7 +689,8 @@ def decide(job_specs, documents_text, as_of=None):
                 continue                      # the posting asks for no experience
             if required_months(required_text) is not None:
                 total += 1
-                status, detail = _check_experience(required_text, documents_text, as_of)
+                status, detail = _check_experience(required_text, documents_text, as_of,
+                                                   verified['jobs'] if verified else None)
                 if status == 'pass':
                     met += 1
                     strengths.append(f'{label} ({tag}) verified: {required_text} [{detail}]')
@@ -529,7 +702,8 @@ def decide(job_specs, documents_text, as_of=None):
                         unclear = True
                 continue
 
-        status, found, missing, declarations = _check_terms(required_text, documents_text)
+        status, found, missing, declarations = _check_terms(required_text, documents_text,
+                                                            verified['terms'] if verified else None)
         if status == 'declarations_only':
             # a promise, not provable from documents: not scored, HR confirms
             strengths.append(f'{label}: "{required_text}" is the applicant\'s own promise. '
@@ -554,6 +728,13 @@ def decide(job_specs, documents_text, as_of=None):
                                  f'(none of these found: {", ".join(missing)})')
             else:
                 unclear = True
+
+    if verified is not None:
+        n_bad = len(verified['rejected'])
+        strengths.append(f'AI reading: {verified["accepted"]} claim(s) checked against the documents and accepted'
+                         + (f', {n_bad} rejected' if n_bad else ''))
+        for r_ in verified['rejected']:
+            weaknesses.append(f'AI claim rejected by the code: {r_}')
 
     if total == 0:
         result = 'under_review'
@@ -587,4 +768,5 @@ def decide(job_specs, documents_text, as_of=None):
         'strengths': strengths,
         'weaknesses': weaknesses,
         'auto_fail_reasons': auto_fail if result == 'unqualified' else [],
+        'ai_rejected': verified['rejected'] if verified else [],
     }
