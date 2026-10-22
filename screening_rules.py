@@ -280,6 +280,9 @@ PDS_SLOT = re.compile(r'personal data sheet|\bpds\b', re.I)
 WORK_HEAD = re.compile(
     r'^[ \t]*(?:[ivx]+\.[ \t]*)?(?:work experience|employment history|employment record|'
     r'professional experience|work history)', re.I | re.M)
+PDS_END = re.compile(
+    r'(?:vi|vii|viii)\.\s*(?:learning and development|voluntary work|other information)|'
+    r'signature \(e-signature|cs form (?:no\. )?212 \(revised', re.I)
 END_HEAD = re.compile(
     r'^[ \t]*(?:[ivx]+\.[ \t]*)?(?:education|educational background|skills|references|training|'
     r'learning and development|voluntary work|eligibility|civil service|other information|'
@@ -334,8 +337,11 @@ def _date_tokens(text):
             out.append((m.start(), m.end(), ('date', int(m.group('y1')), _MONTHS[m.group('mon')[:3].lower()],
                                               int(m.group('day')) if m.group('day') else None)))
         elif m.group('num3'):
-            mo, d, y = int(m.group('m3')), int(m.group('d3')), int(m.group('y3'))
-            if 1 <= mo <= 12:
+            # The PDS (CS Form 212) writes dd/mm/yyyy, so day-first is the default.
+            # Only when the second number cannot be a month (like 07/25/2024) is it month-first.
+            a, b, y = int(m.group('m3')), int(m.group('d3')), int(m.group('y3'))
+            d, mo = (a, b) if (a > 12 or b <= 12) else (b, a)
+            if 1 <= mo <= 12 and 1 <= d <= 31:
                 out.append((m.start(), m.end(), ('date', y, mo, d)))
         elif m.group('num2'):
             mo, y = int(m.group('m2')), int(m.group('y2'))
@@ -360,9 +366,30 @@ def _work_sources(documents_text):
             if not head:
                 continue
             rest = text[head.end():]
-            end = END_HEAD.search(rest)
-            out.append((slot, rest[:end.start()] if end else rest))
+            cuts = [m.start() for m in (END_HEAD.search(rest), PDS_END.search(rest)) if m]
+            out.append((slot, rest[:min(cuts)] if cuts else rest))
     return out
+
+
+def _line_start(text, pos):
+    return text.rfind('\n', 0, pos) + 1
+
+
+def _entry_start(text, pos):
+    """Where a job entry begins: the line holding its dates, plus up to two lines just above it
+    (a job title written above the dates). Stops at a blank line or at a line that has dates,
+    so one row of a table never borrows words from the row above it."""
+    start = _line_start(text, pos)
+    for _ in range(2):
+        if start == 0:
+            break
+        prev_end = start - 1
+        prev_start = _line_start(text, prev_end)
+        line = text[prev_start:prev_end]
+        if not line.strip() or DATE_TOKEN.search(line):
+            break
+        start = prev_start
+    return start
 
 
 def measure_experience(documents_text, term_alternatives, as_of):
@@ -385,8 +412,8 @@ def measure_experience(documents_text, term_alternatives, as_of):
             else:
                 i += 1
         for n, (a, b) in enumerate(ranges):
-            lo = max(a[0] - 80, ranges[n - 1][1][1] if n else 0)
-            hi = min(b[1] + 300, ranges[n + 1][0][0] if n + 1 < len(ranges) else len(text))
+            lo = _entry_start(text, a[0])
+            hi = min(b[1] + 300, _line_start(text, ranges[n + 1][0][0]) if n + 1 < len(ranges) else len(text))
             context = _stems(text[lo:hi])
             ctx = set(context)          # the job entry only needs to mention the words, not in a tight window
             if term_alternatives and not any(set(k) <= ctx for k in term_alternatives):

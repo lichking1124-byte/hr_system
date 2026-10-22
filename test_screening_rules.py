@@ -234,5 +234,53 @@ class ExperienceLength(unittest.TestCase):
         self.assertEqual(decide(self.JOB6, docs, AS_OF)['result'], 'qualified')
 
 
+REAL_PDS = """III. EDUCATIONAL BACKGROUND
+COLLEGE BULACAN STATE UNIVERSITY 2020 2024 2024 CUM LAUDE
+V. WORK EXPERIENCE 
+(Include private employment. Start from your recent work) Description of duties should be indicated in the attached Work Experience sheet.
+28.
+From To
+01/06/2023 30/09/2023 IT SUPPORT INTERN ABC COMPUTER SERVICES 0 N/A INTERN N
+01/07/2024 PRESENT IT STAFF XYZ TECHNOLOGY CORPORATION 22000 N/A PERMANENT N
+(Continue on sheet C6 if necessary)
+SIGNATURE (e-signature/digital certificate) DATE
+ CS FORM 212 (Revised 2026), Page 2 of 4
+(Y/ N)VI. LEARNING AND DEVELOPMENT (L&D) INTERVENTIONS/TRAINING PROGRAMS ATTENDED
+29.
+From To
+BASIC NETWORKING SEMINAR 10/02/2023 11/02/2023 16 TECHNICAL BULSU COLLEGE OF INDUSTRIAL TECHNOLOGY
+CYBERSECURITY AWARENESS TRAINING 05/05/2024 05/05/2024 8 TECHNICAL DICT REGION III
+VII. VOLUNTARY WORK OR INVOLVEMENT
+"""
+
+
+class RealPDS(unittest.TestCase):
+    PDS = {'Personal Data Sheet (PDS)': REAL_PDS}
+
+    def test_pds_dates_are_day_first(self):
+        from screening_rules import measure_experience
+        months, merged, _ = measure_experience(self.PDS, [], AS_OF)
+        self.assertEqual([(str(a), str(b)) for a, b, _ in merged],
+                         [('2023-06-01', '2023-09-30'), ('2024-07-01', '2026-10-22')])
+        self.assertAlmostEqual(months, 31.7, places=1)
+
+    def test_training_and_education_dates_are_not_experience(self):
+        from screening_rules import measure_experience
+        months, merged, _ = measure_experience(self.PDS, [], AS_OF)
+        self.assertEqual(len(merged), 2)       # only the two jobs, not the 2 trainings or 2020-2024 school
+
+    def test_a_table_row_does_not_borrow_words_from_the_row_above(self):
+        from screening_rules import measure_experience
+        # "IT STAFF" says nothing about support, so only the intern row (IT SUPPORT INTERN) is related
+        months, merged, _ = measure_experience(self.PDS, [['it', 'support']], AS_OF)
+        self.assertEqual([(str(a), str(b)) for a, b, _ in merged], [('2023-06-01', '2023-09-30')])
+
+    def test_month_first_dates_still_read_when_day_is_over_12(self):
+        from screening_rules import measure_experience
+        pds = 'V. WORK EXPERIENCE\n07/25/2025 08/30/2025 IT SUPPORT STAFF XYZ\nVI. LEARNING AND DEVELOPMENT'
+        _, merged, _ = measure_experience({'PDS': pds}, [], AS_OF)
+        self.assertEqual([(str(a), str(b)) for a, b, _ in merged], [('2025-07-25', '2025-08-30')])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
