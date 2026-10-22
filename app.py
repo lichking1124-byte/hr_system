@@ -4,7 +4,7 @@ import json
 import requests
 from io import BytesIO
 from urllib.parse import urlparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
 from screening_rules import decide
@@ -589,7 +589,13 @@ def screen_one_applicant(conn, applicant, job_specs):
     documents_text = load_documents_text(conn, applicant['id'])
 
     # Fixed checklist (plain code, no AI). Same documents -> same result, every time.
-    outcome = decide(job_specs, documents_text)
+    # "Present" in a work history means the day the applicant applied, so a later
+    # Re-screen gives the same answer.
+    try:
+        as_of = date.fromisoformat(str(applicant['applied_at'])[:10])
+    except (ValueError, TypeError, KeyError):
+        as_of = None
+    outcome = decide(job_specs, documents_text, as_of)
 
     conn.execute('''
         UPDATE applicants SET

@@ -13,8 +13,12 @@ THE CHECKS (each one is a yes / no / unclear answer)
                        like a resume).
 3. Education           The Diploma / Transcript text has degree words AND the
                        main words of a degree the posting names.
-4. Skills, Experience, The posting's key terms are searched in the uploaded
-   Other               documents. HR sees exactly which terms were missing.
+4. Experience         If the posting gives a length ("at least 6 months"), the
+                       code reads dated work ranges from the Certificate of
+                       Employment, the resume's Work Experience part and the PDS,
+                       merges overlaps and adds them up. Too few months = not met.
+5. Skills, Other      The posting's key terms are searched in the uploaded
+                       documents. HR sees exactly which terms were missing.
 
 THE THREE GROUPS
 QUALIFIED     Every check passes.
@@ -27,7 +31,9 @@ UNDER REVIEW  Anything unclear: a missing or unreadable file (scan, photo),
               that is not clear-cut, or a posting with nothing to check.
               HR checks these by hand.
 """
+import calendar
 import re
+from datetime import date
 
 CATEGORIES = [
     ('education', 'Education'),
@@ -61,8 +67,11 @@ STOPWORDS = {
     'basic', 'proficient', 'proficiency', 'familiarity', 'working', 'minimum', 'least',
     'required', 'requirement', 'year', 'years', 'month', 'months', 'experience',
     'skill', 'skills', 'field', 'work', 'one', 'two', 'three', 'five', 'ten',
-    'more', 'than', 'least', 'plus',
+    'more', 'than', 'least', 'plus', 'role', 'roles', 'position', 'job', 'task', 'tasks',
 }
+# "Willingness to ..." items are the applicant's promise. No document can prove them,
+# so the system does not score them. HR confirms them.
+DECLARATION = re.compile(r'^\s*(willing|willingness|ready to|open to)\b', re.I)
 # Extra words ignored for education (the generic parts of a degree title).
 EDU_GENERIC = STOPWORDS | {
     'bachelor', 'bachelors', 'master', 'masters', 'doctor', 'doctorate', 'degree',
@@ -222,33 +231,219 @@ def _check_education(required_text, documents_text):
 
 def _check_terms(required_text, documents_text):
     """
-    Returns (status, found_terms, missing_terms).
-    status: 'pass' (all found), 'none' (none found), 'partial', or 'noterms'.
+    Returns (status, found_terms, missing_terms, declarations).
+    status: 'pass' (all found), 'none' (none found), 'partial', 'noterms',
+            or 'declarations_only' (the posting item is only a "willingness" promise).
+    A term written as "A or B" is found if A or B is found.
     """
-    terms = []
+    terms, declarations = [], []
     for p in _split_phrases(required_text):
-        key = _key_stems(p, STOPWORDS)
-        if key and (p, key) not in terms:
-            terms.append((p, key))
+        if DECLARATION.match(p):
+            declarations.append(p)
+            continue
+        alts = []
+        for alt in re.split(r'\bor\b', p, flags=re.I):
+            key = _key_stems(alt, STOPWORDS)
+            if key:
+                alts.append(key)
+        if alts and (p, alts) not in terms:
+            terms.append((p, alts))
     if not terms:
-        return 'noterms', [], []
+        return ('declarations_only' if declarations else 'noterms'), [], [], declarations
     # search each document on its own so words from two files are never glued together
     per_doc = [_stems(t) for t in documents_text.values()]
     found, missing = [], []
-    for phrase, key in terms:
-        if any(_present(key, d) for d in per_doc):
+    for phrase, alts in terms:
+        if any(_present(key, d) for key in alts for d in per_doc):
             found.append(phrase)
         else:
             missing.append(phrase)
     if not missing:
-        return 'pass', found, missing
+        return 'pass', found, missing, declarations
     if not found:
-        return 'none', found, missing
-    return 'partial', found, missing
+        return 'none', found, missing, declarations
+    return 'partial', found, missing, declarations
+
+
+# ------------------------------------------------------- length of experience
+# The system reads date ranges ("July 2024 to Present", "07/01/2024 - 12/31/2024")
+# ONLY from work-experience places: a Certificate of Employment, the "Work Experience"
+# part of a resume, and section V of the PDS. Education dates, training dates and
+# letters are never counted. Overlapping ranges are merged so the same job listed in
+# two documents is counted once. "Present" means the date the applicant applied, so
+# re-screening later gives the same answer.
+DAYS_PER_MONTH = 30.4375
+TOLERANCE_MONTHS = 0.15
+
+EMPLOY_SLOT = re.compile(r'employment|service record|work experience|\bcoe\b', re.I)
+PDS_SLOT = re.compile(r'personal data sheet|\bpds\b', re.I)
+WORK_HEAD = re.compile(
+    r'^[ \t]*(?:[ivx]+\.[ \t]*)?(?:work experience|employment history|employment record|'
+    r'professional experience|work history)', re.I | re.M)
+END_HEAD = re.compile(
+    r'^[ \t]*(?:[ivx]+\.[ \t]*)?(?:education|educational background|skills|references|training|'
+    r'learning and development|voluntary work|eligibility|civil service|other information|'
+    r'objective|awards|achievements|certifications|seminars)\b', re.I | re.M)
+
+_MONTHS = {'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6, 'jul': 7,
+           'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12}
+_MONTH_RE = (r'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|'
+             r'sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?')
+DATE_TOKEN = re.compile(
+    r'(?P<name>(?<![a-z])(?P<mon>' + _MONTH_RE + r')\.?\s+(?:(?P<day>\d{1,2})(?:st|nd|rd|th)?,?\s+)?(?P<y1>\d{4}))'
+    r'|(?P<num3>(?P<m3>\d{1,2})[/-](?P<d3>\d{1,2})[/-](?P<y3>\d{4}))'
+    r'|(?P<num2>(?P<m2>\d{1,2})[/-](?P<y2>\d{4}))'
+    r'|(?P<now>\bpresent\b|\bcurrent(?:ly)?\b|\bto date\b|\bnow\b)'
+    r'|(?P<year>\b(?:19|20)\d{2}\b)', re.I)
+CONNECTOR = re.compile(r'^\s*(?:-|–|—|to|until|up to|till)?\s*$', re.I)
+
+_WORD_NUMBERS = {'a': 1, 'an': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6,
+                 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'eleven': 11, 'twelve': 12}
+NO_EXPERIENCE = re.compile(r'\bno experience\b|experience (?:is )?not required|\bnone required\b', re.I)
+
+
+def required_months(text):
+    """'At least 6 months' -> 6.0, '2 years' -> 24.0, 'one year' -> 12.0, no duration -> None."""
+    m = re.search(r'(\d+(?:\.\d+)?|' + '|'.join(_WORD_NUMBERS) + r')[\s-]*(years?|yrs?|months?|mos?)\b',
+                  text or '', re.I)
+    if not m:
+        return None
+    n = m.group(1).lower()
+    n = float(n) if n[0].isdigit() else float(_WORD_NUMBERS[n])
+    return n * (12.0 if m.group(2).lower().startswith('y') else 1.0)
+
+
+def _to_date(tok, as_of, is_end):
+    kind, y, mo, d = tok
+    if kind == 'now':
+        return as_of
+    if mo is None:
+        return None                      # year only: not precise enough
+    if d is None:
+        d = calendar.monthrange(y, mo)[1] if is_end else 1
+    try:
+        return date(y, mo, min(d, calendar.monthrange(y, mo)[1]))
+    except ValueError:
+        return None
+
+
+def _date_tokens(text):
+    out = []
+    for m in DATE_TOKEN.finditer(text):
+        if m.group('name'):
+            out.append((m.start(), m.end(), ('date', int(m.group('y1')), _MONTHS[m.group('mon')[:3].lower()],
+                                              int(m.group('day')) if m.group('day') else None)))
+        elif m.group('num3'):
+            mo, d, y = int(m.group('m3')), int(m.group('d3')), int(m.group('y3'))
+            if 1 <= mo <= 12:
+                out.append((m.start(), m.end(), ('date', y, mo, d)))
+        elif m.group('num2'):
+            mo, y = int(m.group('m2')), int(m.group('y2'))
+            if 1 <= mo <= 12:
+                out.append((m.start(), m.end(), ('date', y, mo, None)))
+        elif m.group('now'):
+            out.append((m.start(), m.end(), ('now', None, None, None)))
+        else:
+            out.append((m.start(), m.end(), ('date', int(m.group('year')), None, None)))
+    return out
+
+
+def _work_sources(documents_text):
+    """[(slot, text)] limited to the places where work experience is written."""
+    out = []
+    for slot, text in documents_text.items():
+        text = text or ''
+        if EMPLOY_SLOT.search(slot):
+            out.append((slot, text))
+        elif PDS_SLOT.search(slot) or RESUME_SLOT.search(slot):
+            head = WORK_HEAD.search(text)
+            if not head:
+                continue
+            rest = text[head.end():]
+            end = END_HEAD.search(rest)
+            out.append((slot, rest[:end.start()] if end else rest))
+    return out
+
+
+def measure_experience(documents_text, term_alternatives, as_of):
+    """
+    Returns (months, ranges, ambiguous). months: merged months of related work.
+    ranges: [(start, end, slot)] that were counted. ambiguous: year-only ranges that
+    could not be measured. term_alternatives: key-word lists; a range counts only if
+    its job entry mentions at least one (empty list = every work range counts).
+    """
+    counted, ambiguous = [], []
+    for slot, text in _work_sources(documents_text):
+        toks = _date_tokens(text)
+        i = 0
+        ranges = []                                   # (tok_a, tok_b, a_start, b_end)
+        while i + 1 < len(toks):
+            a, b = toks[i], toks[i + 1]
+            if a[2][0] != 'now' and CONNECTOR.match(text[a[1]:b[0]]):
+                ranges.append((a, b))
+                i += 2
+            else:
+                i += 1
+        for n, (a, b) in enumerate(ranges):
+            lo = max(a[0] - 80, ranges[n - 1][1][1] if n else 0)
+            hi = min(b[1] + 300, ranges[n + 1][0][0] if n + 1 < len(ranges) else len(text))
+            context = _stems(text[lo:hi])
+            ctx = set(context)          # the job entry only needs to mention the words, not in a tight window
+            if term_alternatives and not any(set(k) <= ctx for k in term_alternatives):
+                continue
+            start = _to_date(a[2], as_of, False)
+            end = _to_date(b[2], as_of, True)
+            if start is None or end is None:
+                ambiguous.append(slot)
+                continue
+            end = min(end, as_of)
+            if end < start:
+                continue
+            counted.append((start, end, slot))
+    counted.sort()
+    merged = []
+    for st, en, slot in counted:
+        if merged and st <= merged[-1][1]:
+            if en > merged[-1][1]:
+                merged[-1][1] = en
+            if slot not in merged[-1][2]:
+                merged[-1][2].append(slot)
+        else:
+            merged.append([st, en, [slot]])
+    days = sum((en - st).days + 1 for st, en, _ in merged)
+    return days / DAYS_PER_MONTH, merged, ambiguous
+
+
+def _fmt(d):
+    return d.strftime('%b %Y')
+
+
+def _check_experience(required_text, documents_text, as_of):
+    """Returns (status, detail): 'pass', 'fail' (clear) or 'unclear'."""
+    need = required_months(required_text)
+    alts = []
+    for p in _split_phrases(required_text):
+        if DECLARATION.match(p):
+            continue
+        for alt in re.split(r'\bor\b', p, flags=re.I):
+            key = _key_stems(alt, STOPWORDS)
+            if key:
+                alts.append(key)
+    months, merged, ambiguous = measure_experience(documents_text, alts, as_of)
+    shown = '; '.join(f'{_fmt(st)} to {_fmt(en)} ({" + ".join(sl)})' for st, en, sl in merged)
+    if months + TOLERANCE_MONTHS >= need:
+        return 'pass', f'{months:.1f} months of related work found, {need:g} needed: {shown}'
+    if ambiguous:
+        return 'unclear', (f'only {months:.1f} months could be measured, {need:g} needed, and some jobs '
+                           f'show years without months, so HR should check the exact dates')
+    if merged:
+        return 'fail', f'only {months:.1f} months of related work found, {need:g} needed: {shown}'
+    return 'fail', f'no dated related work experience found, {need:g} months needed'
 
 
 # ---------------------------------------------------------------- the decision
-def decide(job_specs, documents_text):
+def decide(job_specs, documents_text, as_of=None):
+    as_of = as_of or date.today()
     mandatory = set(job_specs.get('mandatory_requirements') or [])
 
     strengths, weaknesses, auto_fail = [], [], []
@@ -273,11 +468,11 @@ def decide(job_specs, documents_text):
         is_listed, required_text = _listed(job_specs, key)
         if not is_listed:
             continue
-        total += 1
         is_mand = key in mandatory
         tag = 'mandatory' if is_mand else 'optional'
 
         if key == 'education':
+            total += 1
             status, detail = _check_education(required_text, documents_text)
             if status == 'pass':
                 met += 1
@@ -288,25 +483,50 @@ def decide(job_specs, documents_text):
                     auto_fail.append(f'Disqualified: mandatory education requirement not met ({required_text})')
                 else:
                     unclear = True
-        else:
-            status, found, missing = _check_terms(required_text, documents_text)
-            if status == 'pass':
-                met += 1
-                strengths.append(f'{label} ({tag}) verified: found {", ".join(found)}')
-            elif status == 'noterms':
-                unclear = True
-                weaknesses.append(f'{label} ({tag}) could not be checked by the system: {required_text} '
-                                  f'[no key terms could be taken from it. HR should check by hand]')
-            else:
-                line = f'{label} ({tag}) not verified: missing {", ".join(missing)}'
-                if found:
-                    line += f' [found: {", ".join(found)}]'
-                weaknesses.append(line)
-                if status == 'none' and is_mand and not doc_problem:
-                    auto_fail.append(f'Disqualified: mandatory {label.lower()} requirement not met '
-                                     f'(none of these found: {", ".join(missing)})')
+            continue
+
+        if key == 'experience':
+            if NO_EXPERIENCE.search(required_text):
+                continue                      # the posting asks for no experience
+            if required_months(required_text) is not None:
+                total += 1
+                status, detail = _check_experience(required_text, documents_text, as_of)
+                if status == 'pass':
+                    met += 1
+                    strengths.append(f'{label} ({tag}) verified: {required_text} [{detail}]')
                 else:
-                    unclear = True
+                    weaknesses.append(f'{label} ({tag}) not verified: {required_text} [{detail}]')
+                    if status == 'fail' and is_mand and not doc_problem:
+                        auto_fail.append(f'Disqualified: mandatory experience requirement not met ({detail})')
+                    else:
+                        unclear = True
+                continue
+
+        status, found, missing, declarations = _check_terms(required_text, documents_text)
+        if status == 'declarations_only':
+            # a promise, not provable from documents: not scored, HR confirms
+            strengths.append(f'{label}: "{required_text}" is the applicant\'s own promise. '
+                             f'Documents cannot prove it, so it is not scored. HR confirms it.')
+            continue
+        total += 1
+        if status == 'pass':
+            met += 1
+            line = f'{label} ({tag}) verified: found {", ".join(found)}'
+            strengths.append(line)
+        elif status == 'noterms':
+            unclear = True
+            weaknesses.append(f'{label} ({tag}) could not be checked by the system: {required_text} '
+                              f'[no key terms could be taken from it. HR should check by hand]')
+        else:
+            line = f'{label} ({tag}) not verified: missing {", ".join(missing)}'
+            if found:
+                line += f' [found: {", ".join(found)}]'
+            weaknesses.append(line)
+            if status == 'none' and is_mand and not doc_problem:
+                auto_fail.append(f'Disqualified: mandatory {label.lower()} requirement not met '
+                                 f'(none of these found: {", ".join(missing)})')
+            else:
+                unclear = True
 
     if total == 0:
         result = 'under_review'
