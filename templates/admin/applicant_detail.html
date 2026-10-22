@@ -45,6 +45,11 @@
     background: #fff8e1; padding: 10px 14px; border-radius: 6px; margin-top: 8px;
     border-left: 4px solid #e0a800; font-size: 13px; color: #5c4400; white-space: pre-wrap; line-height: 1.6;
 }
+.hr-form textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font: inherit; font-size: 13px; min-height: 64px; margin: 8px 0; }
+.hr-form .hr-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.hr-yes { background: #2d7a3a; color: #fff; border: 0; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.hr-no { background: var(--plum); color: #fff; border: 0; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.hr-record { background: #eef3fb; border-left: 4px solid #3a62a8; padding: 10px 14px; border-radius: 6px; font-size: 13px; color: #1d3557; line-height: 1.6; }
 .ai-note-small { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 .doc-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .doc-tab {
@@ -92,6 +97,10 @@
                 <span class="badge badge-danger">Disqualified</span>
                 {% endif %}
                 <div class="review-reason">{{ a.screening_reason }}</div>
+                <div class="ai-note-small">
+                    <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}/reread"
+                       onclick="return confirm('Ask the AI to read this applicant\'s documents again? The checklist result may change.');">🔄 Re-read documents with AI</a>
+                </div>
 
                 {% set auto_fails = a.screening_missing | from_json %}
                 {% for item in auto_fails if item.startswith('Auto-failed') or item.startswith('Disqualified') %}
@@ -118,6 +127,36 @@
                 <div class="review-reason">Not screened yet. Use the Screen button on the applicants page.</div>
             {% endif %}
         </div>
+
+        {% if a.hr_decision %}
+        <div class="review-card">
+            <h3>HR decision</h3>
+            <div class="hr-record">
+                <strong>{{ 'Qualified' if a.hr_decision == 'qualified' else 'Disqualified' }}</strong>
+                by {{ a.hr_decision_by or 'HR' }}{% if hr_when %} on {{ hr_when }}{% endif %}<br>
+                Reason: {{ a.hr_decision_reason }}<br>
+                The system's checklist said: <strong>{{ 'Disqualified' if a.system_result == 'unqualified' else ('Under review' if a.system_result == 'under_review' else ('Qualified' if a.system_result == 'qualified' else a.system_result)) }}</strong>
+            </div>
+        </div>
+        {% elif a.is_screened and a.screening_result == 'under_review' %}
+        <div class="review-card">
+            <h3>HR decision</h3>
+            <div class="ai-note-small" style="margin-top:0;">
+                The checklist could not settle this applicant. After you check the documents, record your decision.
+                The checklist result stays on record next to it.
+            </div>
+            <form class="hr-form" method="post" action="/admin/job/{{ job.id }}/applicant/{{ a.id }}/decide">
+                <textarea name="reason" required minlength="5" maxlength="500"
+                          placeholder="Reason for your decision (required)"></textarea>
+                <div class="hr-buttons">
+                    <button type="submit" name="decision" value="qualified" class="hr-yes"
+                            onclick="return confirm('Mark this applicant as Qualified?');">Mark Qualified</button>
+                    <button type="submit" name="decision" value="unqualified" class="hr-no"
+                            onclick="return confirm('Mark this applicant as Disqualified?');">Mark Disqualified</button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
 
         {% if a.is_screened and a.screening_result == 'under_review' %}
         <div class="review-card">

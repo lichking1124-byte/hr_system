@@ -1,14 +1,16 @@
 from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash, Response
 import os
 import json
+import time
+import hashlib
 import requests
 from io import BytesIO
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, date
 from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
-from screening_rules import decide
-from ai_screener import advise_applicant
+from screening_rules import decide, posting_terms
+from ai_screener import advise_applicant, read_documents
 from exporter import export_qualified, export_all
 from ad_generator import generate_job_ad_image
 from cloudinary_uploader import upload_file
@@ -43,6 +45,24 @@ def ensure_position_type_column():
 
 
 ensure_position_type_column()
+
+
+def ensure_screening_columns():
+    """Adds the columns for the saved AI reading and for HR's decision, if they are missing.
+    Safe to run on every start: it only adds columns, it never changes or deletes data."""
+    conn = get_db()
+    try:
+        for column in ('ai_reading', 'ai_reading_hash', 'system_result', 'hr_decision',
+                       'hr_decision_reason', 'hr_decision_by', 'hr_decision_at'):
+            conn.execute(f"ALTER TABLE applicants ADD COLUMN IF NOT EXISTS {column} TEXT")
+        conn.commit()
+    except Exception as e:
+        print(f"screening columns check failed: {e}")
+    finally:
+        conn.close()
+
+
+ensure_screening_columns()
 
 
 def clean_position_type(value):
@@ -491,6 +511,13 @@ def admin_applicant_detail(job_id, applicant_id):
     if not job or not applicant:
         return "Not found", 404
 
+    hr_when = ''
+    try:
+        if _col(applicant, 'hr_decision_at'):
+            hr_when = (datetime.fromisoformat(applicant['hr_decision_at']) + timedelta(hours=8)).strftime('%b %d, %Y %I:%M %p')
+    except ValueError:
+        hr_when = ''
+
     doc_list = [{
         'idx': i,
         'type': d['document_type'],
@@ -503,7 +530,7 @@ def admin_applicant_detail(job_id, applicant_id):
 
     return render_template('admin/applicant_detail.html',
                            job=job, a=applicant, docs=doc_list, selected=selected,
-                           ai_note=ai_note, ai_error=ai_error)
+                           ai_note=ai_note, ai_error=ai_error, hr_when=hr_when)
 
 
 @app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/document/<int:idx>')
@@ -586,17 +613,76 @@ def load_documents_text(conn, applicant_id):
     return documents_text
 
 
-def screen_one_applicant(conn, applicant, job_specs):
+AI_TIME_BUDGET = 30    # seconds of fresh AI reading allowed in one request (the host has a time limit)
+HR_LABELS = {'qualified': 'Qualified', 'unqualified': 'Disqualified'}
+
+
+def _col(row, key):
+    """A column that may not exist yet on an old row."""
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return None
+
+
+def documents_fingerprint(documents_text, terms):
+    """Changes when a document or the posting's skill terms change, so the saved AI reading is reused
+    only while it is still about the same documents."""
+    blob = json.dumps({'docs': documents_text, 'terms': terms}, sort_keys=True)
+    return hashlib.sha256(blob.encode('utf-8')).hexdigest()
+
+
+def screen_one_applicant(conn, applicant, job_specs, allow_ai=True, force_reread=False):
+    """
+    1. The AI READS the documents once and the reading is saved (reused on every Re-screen
+       while the documents are unchanged, so the result stays the same).
+    2. Plain code CHECKS every claim in the reading against the real documents and applies the
+       fixed checklist. Same documents + same saved reading = same result, every time.
+    Returns how the AI was used: 'saved', 'fresh', 'failed' or 'skipped'.
+    """
     documents_text = load_documents_text(conn, applicant['id'])
 
-    # Fixed checklist (plain code, no AI). Same documents -> same result, every time.
-    # "Present" in a work history means the day the applicant applied, so a later
-    # Re-screen gives the same answer.
+    # "Present" in a work history means the day the applicant applied.
     try:
         as_of = date.fromisoformat(str(applicant['applied_at'])[:10])
     except (ValueError, TypeError, KeyError):
         as_of = None
-    outcome = decide(job_specs, documents_text, as_of)
+
+    terms = posting_terms(job_specs)
+    fingerprint = documents_fingerprint(documents_text, terms)
+    reading, how = None, 'skipped'
+
+    saved = _col(applicant, 'ai_reading')
+    if saved and _col(applicant, 'ai_reading_hash') == fingerprint and not force_reread:
+        try:
+            reading, how = json.loads(saved), 'saved'
+        except ValueError:
+            reading = None
+    if reading is None and allow_ai and any((t or '').strip() for t in documents_text.values()):
+        try:
+            reading = read_documents(documents_text, terms)
+            conn.execute('UPDATE applicants SET ai_reading = ?, ai_reading_hash = ? WHERE id = ?',
+                         (json.dumps(reading), fingerprint, applicant['id']))
+            how = 'fresh'
+        except Exception as e:
+            print(f"AI reading failed for applicant {applicant['id']}: {e}")
+            reading, how = None, 'failed'
+
+    outcome = decide(job_specs, documents_text, as_of, reading)
+
+    weaknesses = list(outcome['weaknesses'])
+    if how in ('failed', 'skipped') and any((t or '').strip() for t in documents_text.values()):
+        weaknesses.append('The AI reading was not used for this result (the AI service was not available '
+                          'or time ran out). Only the plain checklist was applied. Click Re-screen to add it.')
+
+    final_result, reason = outcome['result'], outcome['reason']
+    hr_decision = _col(applicant, 'hr_decision')
+    if hr_decision in HR_LABELS:
+        # HR already decided this one: Re-screen refreshes the checklist but never undoes HR's decision.
+        final_result = hr_decision
+        reason = (f"HR decision: {HR_LABELS[hr_decision]} by {_col(applicant, 'hr_decision_by') or 'HR'} - "
+                  f"\"{_col(applicant, 'hr_decision_reason') or ''}\". "
+                  f"The checklist result was {outcome['result'].replace('unqualified', 'disqualified')}: {outcome['reason']}")
 
     conn.execute('''
         UPDATE applicants SET
@@ -606,18 +692,49 @@ def screen_one_applicant(conn, applicant, job_specs):
         screening_missing = ?,
         screening_strengths = ?,
         screening_weaknesses = ?,
+        system_result = ?,
         is_screened = 1
         WHERE id = ?
     ''', (
         outcome['met_count'],
-        outcome['result'],          # qualified / unqualified (disqualified) / under_review
-        outcome['reason'],
+        final_result,               # qualified / unqualified (disqualified) / under_review
+        reason,
         json.dumps(outcome['auto_fail_reasons']),
         json.dumps(outcome['strengths']),
-        json.dumps(outcome['weaknesses']),
+        json.dumps(weaknesses),
+        outcome['result'],          # what the checklist said, kept even after HR decides
         applicant['id']
     ))
     conn.commit()
+    return how
+
+
+def screen_many(conn, applicants, job_specs):
+    """Screen a list of applicants. Fresh AI readings stop once the time budget is used up;
+    the rest get the plain checklist and can be re-screened later to add the AI reading."""
+    started = time.time()
+    failed = no_ai = 0
+    for applicant in applicants:
+        try:
+            how = screen_one_applicant(conn, applicant, job_specs,
+                                       allow_ai=(time.time() - started) < AI_TIME_BUDGET)
+            if how in ('failed', 'skipped'):
+                no_ai += 1
+        except Exception as e:
+            failed += 1
+            print(f"Screening failed for applicant {applicant['id']}: {e}")
+    return failed, no_ai
+
+
+def screening_message(done_text, failed, no_ai):
+    msg = done_text
+    if failed:
+        msg = f'Screening finished, but {failed} applicant(s) could not be screened. Please try them again.'
+    if no_ai:
+        msg += (f' {no_ai} applicant(s) got the plain checklist only, because the AI reading was not '
+                f'available or time ran out. Click Re-screen on them to add it.')
+    return msg
+
 
 def build_job_specs(job):
     mandatory = json.loads(job['mandatory_requirements']) if job['mandatory_requirements'] else []
@@ -645,17 +762,10 @@ def admin_screen(job_id):
 
     job_specs = build_job_specs(job)
 
-    failed = 0
-    for applicant in applicants:
-        try:
-            screen_one_applicant(conn, applicant, job_specs)
-        except Exception as e:
-            failed += 1
-            print(f"Screening failed for applicant {applicant['id']}: {e}")
+    failed, no_ai = screen_many(conn, applicants, job_specs)
 
     conn.close()
-    flash('Screening complete!' if not failed else
-          f'Screening finished, but {failed} applicant(s) could not be screened. Please try them again.')
+    flash(screening_message('Screening complete!', failed, no_ai))
     return redirect(url_for('admin_applicants', job_id=job_id))
 
 @app.route('/admin/job/<int:job_id>/rescreen-all')
@@ -671,17 +781,10 @@ def admin_rescreen_all(job_id):
 
     job_specs = build_job_specs(job)
 
-    failed = 0
-    for applicant in applicants:
-        try:
-            screen_one_applicant(conn, applicant, job_specs)
-        except Exception as e:
-            failed += 1
-            print(f"Screening failed for applicant {applicant['id']}: {e}")
+    failed, no_ai = screen_many(conn, applicants, job_specs)
 
     conn.close()
-    flash('All applicants re-screened!' if not failed else
-          f'Re-screen finished, but {failed} applicant(s) could not be screened. Please try them again.')
+    flash(screening_message('All applicants re-screened!', failed, no_ai))
     return redirect(url_for('admin_applicants', job_id=job_id))
 
 @app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/rescreen')
@@ -701,14 +804,84 @@ def admin_rescreen_one(job_id, applicant_id):
 
     job_specs = build_job_specs(job)
     try:
-        screen_one_applicant(conn, applicant, job_specs)
-        flash('Applicant re-screened!')
+        how = screen_one_applicant(conn, applicant, job_specs)
+        flash({'saved': 'Re-screened using the saved AI reading. The AI was not asked again, so the result is the same.',
+               'fresh': 'The AI read the documents, its claims were checked against them, and the applicant was screened.',
+               }.get(how, 'Re-screened with the plain checklist only, because the AI reading was not available.'))
     except Exception as e:
         print(f"Screening failed for applicant {applicant_id}: {e}")
         flash('This applicant could not be screened. Please try again.')
     conn.close()
 
     return redirect(url_for('admin_applicants', job_id=job_id))
+
+@app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/reread')
+def admin_reread_one(job_id, applicant_id):
+    """Ask the AI to read this applicant's documents again (replaces the saved reading)."""
+    if 'admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    conn = get_db()
+    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
+    applicant = conn.execute(
+        'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
+    ).fetchone()
+    if not job or not applicant:
+        conn.close()
+        return "Not found", 404
+
+    try:
+        how = screen_one_applicant(conn, applicant, build_job_specs(job), force_reread=True)
+        flash('The AI read the documents again and the applicant was re-screened.' if how == 'fresh'
+              else 'The AI could not read the documents right now, so only the plain checklist was applied.')
+        log_action('ai.reread', 'applicant', applicant_id, f'how={how}')
+    except Exception as e:
+        print(f"Re-read failed for applicant {applicant_id}: {e}")
+        flash('This applicant could not be re-read. Please try again.')
+    conn.close()
+    return redirect(url_for('admin_applicant_detail', job_id=job_id, applicant_id=applicant_id))
+
+
+@app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/decide', methods=['POST'])
+def admin_hr_decide(job_id, applicant_id):
+    """HR settles an Under review applicant. The checklist's own result is kept in system_result."""
+    if 'admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    decision = request.form.get('decision')
+    reason = (request.form.get('reason') or '').strip()[:500]
+    back = redirect(url_for('admin_applicant_detail', job_id=job_id, applicant_id=applicant_id))
+    if decision not in HR_LABELS or len(reason) < 5:
+        flash('Please choose Qualified or Disqualified and write a short reason (at least 5 characters).')
+        return back
+
+    conn = get_db()
+    applicant = conn.execute(
+        'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
+    ).fetchone()
+    if (not applicant or applicant['screening_result'] != 'under_review'
+            or _col(applicant, 'hr_decision')):
+        conn.close()
+        flash('Only an Under review applicant without an HR decision can be decided here.')
+        return back
+
+    who = session.get('admin', 'HR')
+    new_reason = (f'HR decision: {HR_LABELS[decision]} by {who} - "{reason}". '
+                  f'The checklist result was under review: {applicant["screening_reason"]}')
+    conn.execute('''
+        UPDATE applicants SET
+        hr_decision = ?, hr_decision_reason = ?, hr_decision_by = ?, hr_decision_at = ?,
+        system_result = ?, screening_result = ?, screening_reason = ?
+        WHERE id = ?
+    ''', (decision, reason, who, datetime.utcnow().isoformat(timespec='seconds'),
+          'under_review', decision, new_reason, applicant_id))
+    conn.commit()
+    conn.close()
+    log_action('hr.decision', 'applicant', applicant_id,
+               f'decision={decision}; checklist_result=under_review; reason={reason[:200]}')
+    flash(f'Recorded: {HR_LABELS[decision]}.')
+    return back
+
 
 @app.route('/admin/job/<int:job_id>/generate-ad')
 def admin_generate_ad(job_id):
