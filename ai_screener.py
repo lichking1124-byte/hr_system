@@ -158,6 +158,8 @@ For each job give:
   present, current or to date.
 - "quote": text copied character for character from ONE document, containing the job title line, the dates
   AND the first line or two of the duties if they are written. Maximum 300 characters. Never paraphrase.
+  If a job is written as a table row (as in the Personal Data Sheet, where the dates come first, then the
+  position, then the company), copy the row exactly in that same order. Never rearrange it or add commas or dashes.
 
 TASK 2 - SKILLS. For each requirement below, add an entry ONLY if the documents clearly show the applicant has
 it. The wording in the document may be different if the meaning is the same. Give:

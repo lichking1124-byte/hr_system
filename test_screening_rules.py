@@ -449,5 +449,35 @@ class WrongSlots(unittest.TestCase):
         self.assertEqual(check_document_slots({'Barangay Clearance': 'Some readable text about a clearance issued.'}), [])
 
 
+class Presentation(unittest.TestCase):
+    JOB = dict(SAMPLE_JOB, skills='', other_requirements='', mandatory_requirements=['education', 'experience'],
+               required_documents=[])
+
+    def test_result_text_says_the_ai_reads_and_the_code_decides(self):
+        r = decide(self.JOB, SAMPLE_DOCS, AS_OF)
+        self.assertNotIn('no AI', r['reason'])
+        self.assertIn('The AI only reads the documents', r['reason'])
+
+    def test_a_rejected_ai_claim_is_shown_in_the_ai_line_and_not_as_a_problem(self):
+        reading = {'jobs': [{'title': 'IT SUPPORT INTERN', 'start': '2023-06', 'end': '2023-09',
+                             'quote': 'IT SUPPORT INTERN, ABC COMPUTER SERVICES, 01/06/2023 - 30/09/2023'}], 'terms': []}
+        r = decide(self.JOB, SAMPLE_DOCS, AS_OF, reading)
+        self.assertEqual(r['result'], 'qualified')
+        self.assertFalse(any('rejected' in w for w in r['weaknesses']))
+        line = next(s for s in r['strengths'] if s.startswith('AI reading'))
+        self.assertIn('1 rejected by the code', line)
+
+    def test_a_source_is_listed_once_even_when_the_code_and_the_ai_both_found_the_job(self):
+        resume = ("RESUME\nWork Experience\nIT Support Staff, XYZ Corp, January 2026 to June 2026\nIT support.\n"
+                  "Education\nBSIT\nReferences\nx")
+        docs = {'Diploma': SAMPLE_DOCS['Diploma'], 'Resume': resume}
+        reading = {'jobs': [{'title': 'IT Support Staff', 'start': '2026-01', 'end': '2026-06',
+                             'quote': 'IT Support Staff, XYZ Corp, January 2026 to June 2026'}], 'terms': []}
+        job = dict(self.JOB, experience='At least 6 months in any IT support role')
+        text = ' '.join(decide(job, docs, AS_OF, reading)['strengths'])
+        self.assertIn('(Resume)', text)
+        self.assertNotIn('Resume + Resume', text)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

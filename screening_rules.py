@@ -1,9 +1,11 @@
 """
 Fixed checklist that sorts every screened applicant into one of three groups.
 
-This file is plain code. There is no AI and no randomness in it, so the same
-documents and the same posting always give the same result. Re-screening can
-never change an answer unless the documents or the posting changed.
+This file is plain code. There is no randomness in it. The AI may READ the documents
+and hand over facts with exact quotes, but nothing it says is used until the code has
+checked the quote against the real document (see verify_reading). With the same
+documents, the same posting and the same saved reading, the result is always the
+same. Re-screening can never change an answer unless one of those changed.
 
 THE CHECKS (each one is a yes / no / unclear answer)
 1. Required documents  Every required document type has at least one file.
@@ -499,6 +501,14 @@ def _fmt(d):
     return d.strftime('%b %Y')
 
 
+def _source_names(slots):
+    """Show each source once: "Resume" and "Resume (AI-read)" for the same job are just "Resume"."""
+    tag = ' (AI-read)'
+    plain = [x for x in slots if not x.endswith(tag)]
+    ai_only = [x for x in slots if x.endswith(tag) and x[:-len(tag)] not in plain]
+    return plain + ai_only
+
+
 def _check_experience(required_text, documents_text, as_of, extra=None):
     """Returns (status, detail): 'pass', 'fail' (clear) or 'unclear'."""
     need = required_months(required_text)
@@ -511,7 +521,7 @@ def _check_experience(required_text, documents_text, as_of, extra=None):
             if key:
                 alts.append(key)
     months, merged, ambiguous = measure_experience(documents_text, alts, as_of, extra)
-    shown = '; '.join(f'{_fmt(st)} to {_fmt(en)} ({" + ".join(sl)})' for st, en, sl in merged)
+    shown = '; '.join(f'{_fmt(st)} to {_fmt(en)} ({" + ".join(_source_names(sl))})' for st, en, sl in merged)
     if months + TOLERANCE_MONTHS >= need:
         return 'pass', f'{months:.1f} months of related work found, {need:g} needed: {shown}'
     if ambiguous:
@@ -772,10 +782,10 @@ def decide(job_specs, documents_text, as_of=None, reading=None):
 
     if verified is not None:
         n_bad = len(verified['rejected'])
-        strengths.append(f'AI reading: {verified["accepted"]} claim(s) checked against the documents and accepted'
-                         + (f', {n_bad} rejected' if n_bad else ''))
-        for r_ in verified['rejected']:
-            weaknesses.append(f'AI claim rejected by the code: {r_}')
+        line = f'AI reading: {verified["accepted"]} claim(s) checked against the documents and accepted'
+        if n_bad:
+            line += (f', {n_bad} rejected by the code (' + '; '.join(verified['rejected']) + ')')
+        strengths.append(line)
 
     if total == 0:
         result = 'under_review'
@@ -798,7 +808,8 @@ def decide(job_specs, documents_text, as_of=None, reading=None):
         else:
             reason = (f'Under review: {total - met} of {total} requirement(s) could not be fully '
                       f'verified. See the checklist for the exact missing items.')
-    reason += ' Result set by a fixed checklist (plain code, no AI).'
+    reason += (' Result set by a fixed checklist (plain code). The AI only reads the documents, '
+               'and every claim it makes is checked against them.')
 
     return {
         'result': result,
