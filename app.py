@@ -581,11 +581,9 @@ def admin_view_document(job_id, applicant_id, idx):
                                                   "img-src data:; style-src 'unsafe-inline'")
         out.headers['X-Content-Type-Options'] = 'nosniff'
         out.headers['X-Frame-Options'] = 'SAMEORIGIN'
-        log_action('document.view', 'applicant', applicant_id, f"{doc['document_type']}")
         return out
 
     known = ext in DOC_MIMETYPES
-    log_action('document.view', 'applicant', applicant_id, f"{doc['document_type']}")
     out = send_file(
         BytesIO(resp.content),
         mimetype=DOC_MIMETYPES.get(ext, 'application/octet-stream'),

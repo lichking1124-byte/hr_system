@@ -37,7 +37,6 @@ AUDIT_MAP = {
     "admin_rescreen_all": ("screening.rescreen_all", ("GET",)),
     "admin_rescreen_one": ("screening.rescreen_one", ("GET",)),
     "admin_generate_ad": ("job.generate_ad", ("GET",)),
-    "admin_applicants": ("applicants.view", ("GET",)),
     "download_applicant_documents": ("documents.download_one", ("GET",)),
     "download_all_documents": ("documents.download_all", ("GET",)),
     "download_qualified": ("export.qualified", ("GET",)),
