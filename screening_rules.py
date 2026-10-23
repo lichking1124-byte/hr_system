@@ -48,8 +48,24 @@ EMPTY_VALUES = {'', 'none', 'n/a', 'na', 'not applicable', '-'}
 DIPLOMA_SLOT = re.compile(r'diploma|transcript|\btor\b', re.I)
 RESUME_SLOT = re.compile(r'resume|resumé|curriculum vitae|\bcv\b', re.I)
 
-DIPLOMA_MARKERS = ['diploma', 'conferred', 'transcript of records',
-                   'general weighted average', 'this is to certify', 'confers']
+# A diploma / transcript must show degree wording. "This is to certify" alone is NOT enough,
+# because employment and training certificates say it too.
+DIPLOMA_MARKERS = ['diploma', 'confer', 'degree of', 'degree in', 'degree:', 'transcript of records',
+                   'general weighted average', 'weighted average']
+EMPLOY_MARKERS = ['certificate of employment', 'employed as', 'employed at', 'has been employed',
+                  'is employed', 'was employed', 'worked as', 'worked at', 'service record',
+                  'employment record']
+TRAINING_MARKERS = ['training', 'seminar', 'workshop', 'attended', 'participated', 'participation']
+PDS_MARKERS = ['personal data sheet', 'cs form no', 'cs form 212', 'family background',
+               'civil service eligibility']
+LETTER_MARKERS = ['dear ', 'respectfully', 'sincerely', 'yours truly', 'i am writing',
+                  'i would like to apply', 'i am applying', 'i wish to apply']
+TRAINING_SLOT = re.compile(r'training|seminar|workshop', re.I)
+LETTER_SLOT = re.compile(r'application letter|letter of intent|cover letter', re.I)
+# words that give a different kind of document away
+RESUME_GIVEAWAYS = ['curriculum vitae', 'resume', 'work experience', 'objective', 'references',
+                    'employment history']
+PDS_GIVEAWAYS = ['personal data sheet', 'cs form no', 'cs form 212']
 RESUME_MARKERS = ['curriculum vitae', 'resume', 'work experience',
                   'objective', 'skills', 'references', 'employment history']
 
@@ -164,8 +180,16 @@ def check_required_documents(job_specs, documents_text):
     return missing
 
 
+def _has_any(low, markers):
+    return any(m in low for m in markers)
+
+
 def check_document_slots(documents_text):
-    """Plain keyword checks. Returns a list of warnings for HR."""
+    """
+    Plain keyword checks that each file looks like the slot it was uploaded to.
+    Returns a list of warnings for HR. A file in the wrong slot sends the applicant to
+    Under review, never to Disqualified, because it is usually an honest mix-up.
+    """
     warnings = []
     for slot, text in documents_text.items():
         low = (text or '').lower()
@@ -174,14 +198,31 @@ def check_document_slots(documents_text):
                 f'Document check: the file(s) in "{slot}" have no readable text '
                 f'(possibly a scan or photo). HR should open and review them.')
             continue
-        if DIPLOMA_SLOT.search(slot) and not any(m in low for m in DIPLOMA_MARKERS):
+
+        wrong_kind = None
+        if DIPLOMA_SLOT.search(slot):
+            looks_like_resume = sum(1 for m in RESUME_GIVEAWAYS if m in low) >= 2
+            if not _has_any(low, DIPLOMA_MARKERS) or looks_like_resume:
+                wrong_kind = 'diploma or transcript'
+        elif RESUME_SLOT.search(slot):
+            if not _has_any(low, RESUME_MARKERS) or _has_any(low, PDS_GIVEAWAYS):
+                wrong_kind = 'resume'
+        elif PDS_SLOT.search(slot):
+            if not _has_any(low, PDS_MARKERS):
+                wrong_kind = 'Personal Data Sheet'
+        elif EMPLOY_SLOT.search(slot):
+            if not _has_any(low, EMPLOY_MARKERS):
+                wrong_kind = 'certificate of employment'
+        elif TRAINING_SLOT.search(slot):
+            if not _has_any(low, TRAINING_MARKERS):
+                wrong_kind = 'training certificate'
+        elif LETTER_SLOT.search(slot):
+            if not _has_any(low, LETTER_MARKERS):
+                wrong_kind = 'application letter'
+        if wrong_kind:
             warnings.append(
-                f'Document check: the file in "{slot}" does not look like a '
-                f'diploma or transcript. It may have been uploaded in the wrong slot.')
-        elif RESUME_SLOT.search(slot) and not any(m in low for m in RESUME_MARKERS):
-            warnings.append(
-                f'Document check: the file in "{slot}" does not look like a '
-                f'resume. It may have been uploaded in the wrong slot.')
+                f'Document check: the file in "{slot}" does not look like a {wrong_kind}. '
+                f'It may have been uploaded in the wrong slot.')
     return warnings
 
 

@@ -119,7 +119,7 @@ class ThreeGroups(unittest.TestCase):
 
 # ---- the sample set used for the Nov 3 re-defense dry run -------------------
 SAMPLE_DOCS = {
-    'Application Letter': "I am willing to work across campus branches when needed. I recently completed a Bachelor of Science in Information Technology and I am currently working as an IT support staff member.",
+    'Application Letter': "Dear Sir or Madam: I am writing to apply for the vacant position. I am willing to work across campus branches when needed. I recently completed a Bachelor of Science in Information Technology and I am currently working as an IT support staff member. Respectfully yours, Juan Dela Cruz",
     'Resume': ("RESUME\nJuan Dela Cruz\nObjective\nTo serve as an IT support professional.\nSkills\n"
                "Skills: computer troubleshooting, technical support, network setup, customer service\n"
                "Work Experience\nIT Staff, XYZ Technology Corporation, July 2024 to Present\n"
@@ -228,7 +228,7 @@ class ExperienceLength(unittest.TestCase):
         self.assertEqual(decide(self.JOB6, docs, AS_OF)['result'], 'under_review')
 
     def test_pds_style_numeric_dates(self):
-        pds = ('III. EDUCATIONAL BACKGROUND\nCOLLEGE BSIT 2020 2024\nV. WORK EXPERIENCE\n'
+        pds = ('CS Form No. 212 PERSONAL DATA SHEET\nIII. EDUCATIONAL BACKGROUND\nCOLLEGE BSIT 2020 2024\nV. WORK EXPERIENCE\n'
                '01/15/2026 08/15/2026 IT SUPPORT STAFF XYZ CORP\nVI. VOLUNTARY WORK')
         docs = dict(work_docs(), **{'Personal Data Sheet (PDS)': pds})
         self.assertEqual(decide(self.JOB6, docs, AS_OF)['result'], 'qualified')
@@ -380,6 +380,73 @@ class AIReadingIsChecked(unittest.TestCase):
         for junk in (None, {}, {'jobs': 'x', 'terms': 5}, {'jobs': [1, 'a', None], 'terms': [None]}, 'hello', []):
             self.assertEqual(decide(self.JOB, self.docs(), AS_OF, junk)['result'],
                              decide(self.JOB, self.docs(), AS_OF)['result'])
+
+
+BULSU_STYLE_DIPLOMA = ("Republic of the Philippines BULACAN STATE UNIVERSITY The Board of Regents, upon the "
+                       "recommendation of the Faculty, by virtue of the authority vested in them, confer upon "
+                       "JUAN DELA CRUZ the degree of BACHELOR OF SCIENCE IN INFORMATION TECHNOLOGY with all "
+                       "the rights, privileges and honors appertaining thereto.")
+PDS_TEXT = ("CS Form No. 212 Revised 2026 PERSONAL DATA SHEET\nI. PERSONAL INFORMATION\nII. FAMILY BACKGROUND\n"
+            "III. EDUCATIONAL BACKGROUND\nV. WORK EXPERIENCE\n01/07/2024 PRESENT IT STAFF XYZ TECHNOLOGY CORPORATION\n"
+            "VI. LEARNING AND DEVELOPMENT\nVII. VOLUNTARY WORK")
+FULL_SET = dict(SAMPLE_DOCS, **{'Personal Data Sheet (PDS)': PDS_TEXT})
+
+
+class WrongSlots(unittest.TestCase):
+    """Documents uploaded to the wrong slot must go to Under review, never be trusted and never disqualify."""
+    JOB = dict(SAMPLE_JOB, required_documents=list(FULL_SET))
+
+    def result(self, docs, job=None):
+        return decide(job or self.JOB, docs, AS_OF)
+
+    def swap(self, slot, source):
+        d = dict(FULL_SET)
+        d[slot] = FULL_SET[source]
+        return d
+
+    def test_baseline_is_qualified_and_has_no_slot_warnings(self):
+        r = self.result(FULL_SET)
+        self.assertEqual(r['result'], 'qualified')
+        self.assertEqual([w for w in r['weaknesses'] if w.startswith('Document check')], [])
+
+    def test_every_mixup_is_flagged_and_goes_to_under_review(self):
+        cases = [('Diploma', 'Resume'), ('Resume', 'Personal Data Sheet (PDS)'),
+                 ('Certificate of Employment', 'Certificate of Training'),
+                 ('Certificate of Training', 'Certificate of Employment'),
+                 ('Certificate of Employment', 'Application Letter'),
+                 ('Diploma', 'Certificate of Training'),
+                 ('Personal Data Sheet (PDS)', 'Resume'),
+                 ('Application Letter', 'Diploma'),
+                 ('Transcript of Records', 'Certificate of Employment')]
+        for slot, source in cases:
+            r = self.result(self.swap(slot, source))
+            self.assertEqual(r['result'], 'under_review', f'{source} in the {slot} slot')
+            self.assertTrue(any(w.startswith('Document check') and slot in w for w in r['weaknesses']),
+                            f'{source} in the {slot} slot was not flagged')
+
+    def test_wrong_document_in_the_diploma_slot_does_not_disqualify(self):
+        # education is mandatory and the only proof slot holds a training certificate:
+        # the honest answer is "HR should look", not "disqualified"
+        docs = dict(FULL_SET, **{'Diploma': FULL_SET['Certificate of Training'],
+                                 'Transcript of Records': FULL_SET['Certificate of Training']})
+        r = self.result(docs)
+        self.assertEqual(r['result'], 'under_review')
+        self.assertEqual(r['auto_fail_reasons'], [])
+
+    def test_a_resume_that_mentions_a_bachelors_degree_is_still_not_a_diploma(self):
+        resume = ("RESUME\nObjective\nIT support.\nWork Experience\nIT Staff, July 2024 to Present\n"
+                  "Education\nBachelor of Science in Information Technology\nReferences\nOn request")
+        r = self.result(dict(FULL_SET, **{'Diploma': resume}))
+        self.assertEqual(r['result'], 'under_review')
+
+    def test_real_looking_documents_are_not_flagged(self):
+        for doc in (BULSU_STYLE_DIPLOMA, SAMPLE_DOCS['Diploma'], SAMPLE_DOCS['Transcript of Records']):
+            self.assertEqual(check_document_slots({'Diploma': doc}), [])
+        self.assertEqual(check_document_slots({'Personal Data Sheet (PDS)': PDS_TEXT}), [])
+        self.assertEqual(check_document_slots({'Certificate of Employment (if applicable)': SAMPLE_DOCS['Certificate of Employment']}), [])
+
+    def test_unknown_slot_names_are_left_alone(self):
+        self.assertEqual(check_document_slots({'Barangay Clearance': 'Some readable text about a clearance issued.'}), [])
 
 
 if __name__ == '__main__':

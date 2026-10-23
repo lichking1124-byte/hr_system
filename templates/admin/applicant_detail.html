@@ -137,6 +137,10 @@
                 Reason: {{ a.hr_decision_reason }}<br>
                 The system's checklist said: <strong>{{ 'Disqualified' if a.system_result == 'unqualified' else ('Under review' if a.system_result == 'under_review' else ('Qualified' if a.system_result == 'qualified' else a.system_result)) }}</strong>
             </div>
+            <form method="post" action="/admin/job/{{ job.id }}/applicant/{{ a.id }}/undo-decision" style="margin-top:10px;">
+                <button type="submit" class="hr-no" style="background:#6c757d;"
+                        onclick="return confirm('Undo this HR decision? The applicant goes back to the checklist result.');">Undo decision</button>
+            </form>
         </div>
         {% elif a.is_screened and a.screening_result == 'under_review' %}
         <div class="review-card">

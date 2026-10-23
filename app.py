@@ -883,6 +883,44 @@ def admin_hr_decide(job_id, applicant_id):
     return back
 
 
+@app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/undo-decision', methods=['POST'])
+def admin_hr_undo(job_id, applicant_id):
+    """HR takes back a decision. The applicant returns to the checklist's own result.
+    No reason is asked; the audit log still records who undid what, and when."""
+    if 'admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    back = redirect(url_for('admin_applicant_detail', job_id=job_id, applicant_id=applicant_id))
+    conn = get_db()
+    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
+    applicant = conn.execute(
+        'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
+    ).fetchone()
+    if not job or not applicant or not _col(applicant, 'hr_decision'):
+        conn.close()
+        flash('This applicant has no HR decision to undo.')
+        return back
+
+    previous = applicant['hr_decision']
+    conn.execute('''
+        UPDATE applicants SET
+        hr_decision = NULL, hr_decision_reason = NULL, hr_decision_by = NULL, hr_decision_at = NULL,
+        screening_result = ?, screening_reason = ?
+        WHERE id = ?
+    ''', (_col(applicant, 'system_result') or 'under_review',
+          'HR decision undone. Click Re-screen to refresh the checklist details.', applicant_id))
+    conn.commit()
+    try:        # refresh the checklist details straight away (reuses the saved AI reading)
+        fresh = conn.execute('SELECT * FROM applicants WHERE id = ?', (applicant_id,)).fetchone()
+        screen_one_applicant(conn, fresh, build_job_specs(job))
+    except Exception as e:
+        print(f"Re-screen after undo failed for applicant {applicant_id}: {e}")
+    conn.close()
+    log_action('hr.decision_undone', 'applicant', applicant_id, f'previous_decision={previous}')
+    flash('HR decision undone. The applicant is back to the checklist result.')
+    return back
+
+
 @app.route('/admin/job/<int:job_id>/generate-ad')
 def admin_generate_ad(job_id):
     if 'admin' not in session:
