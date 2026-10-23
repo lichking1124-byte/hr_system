@@ -97,9 +97,10 @@
                 <span class="badge badge-danger">Disqualified</span>
                 {% endif %}
                 <div class="review-reason">{{ a.screening_reason }}</div>
-                <div class="ai-note-small">
-                    <a href="/admin/job/{{ job.id }}/applicant/{{ a.id }}/reread"
+                <div style="margin-top:12px;">
+                    <a class="btn btn-primary btn-sm" href="/admin/job/{{ job.id }}/applicant/{{ a.id }}/reread"
                        onclick="return confirm('Ask the AI to read this applicant\'s documents again? The checklist result may change.');">🔄 Re-read documents with AI</a>
+                    <div class="ai-note-small">Re-screen reuses the saved AI reading. This button makes the AI read the documents again.</div>
                 </div>
 
                 {% set auto_fails = a.screening_missing | from_json %}
