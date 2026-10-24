@@ -32,35 +32,50 @@ except OSError:
 init_db()
 
 
-def ensure_position_type_column():
-    """Adds job_postings.position_type (academic / non_academic) if it is missing."""
+def _add_missing_columns(table, columns):
+    """Adds any of `columns` (all TEXT) that the table does not have yet.
+
+    It first LOOKS at which columns exist (a plain read that blocks nobody) and only runs ALTER TABLE
+    for the ones that are missing. ALTER TABLE takes Postgres's strictest lock even when the column
+    is already there, and running it on every start of the site made it collide with visitors'
+    requests (a "deadlock detected" error). Now a normal start runs no ALTER at all."""
     conn = get_db()
     try:
-        conn.execute("ALTER TABLE job_postings ADD COLUMN IF NOT EXISTS position_type TEXT")
-        conn.commit()
+        have = {r['column_name'] for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = ?", (table,)).fetchall()}
+        for column in columns:
+            if column in have:
+                continue
+            try:
+                conn.execute("SET LOCAL lock_timeout = '5s'")   # never wait long (applies to this step only)
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} TEXT")
+                conn.commit()
+            except Exception as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                print(f"adding {table}.{column} failed (it will be retried on the next start): {e}")
     except Exception as e:
-        print(f"position_type column check failed: {e}")
+        print(f"column check for {table} failed: {e}")
     finally:
         conn.close()
+
+
+def ensure_position_type_column():
+    """job_postings.position_type (academic / non_academic)."""
+    _add_missing_columns('job_postings', ['position_type'])
 
 
 ensure_position_type_column()
 
 
 def ensure_screening_columns():
-    """Adds the columns for the saved AI reading and for HR's decision, if they are missing.
-    Safe to run on every start: it only adds columns, it never changes or deletes data."""
-    conn = get_db()
-    try:
-        for column in ('ai_reading', 'ai_reading_hash', 'system_result', 'hr_decision',
-                       'hr_decision_reason', 'hr_decision_by', 'hr_decision_at'):
-            conn.execute(f"ALTER TABLE applicants ADD COLUMN IF NOT EXISTS {column} TEXT")
-        conn.execute("ALTER TABLE applicant_documents ADD COLUMN IF NOT EXISTS replaced_at TEXT")
-        conn.commit()
-    except Exception as e:
-        print(f"screening columns check failed: {e}")
-    finally:
-        conn.close()
+    """The columns for the saved AI reading, HR's decision and replaced documents."""
+    _add_missing_columns('applicants', ['ai_reading', 'ai_reading_hash', 'system_result', 'hr_decision',
+                                        'hr_decision_reason', 'hr_decision_by', 'hr_decision_at'])
+    _add_missing_columns('applicant_documents', ['replaced_at'])
 
 
 ensure_screening_columns()
@@ -205,6 +220,7 @@ def check_status():
             conn = get_db()
             row = conn.execute('''
                 SELECT a.control_number, a.applied_at, a.is_screened, a.full_name,
+                       a.screening_result, a.hr_decision,
                        j.title, j.campus
                 FROM applicants a
                 JOIN job_postings j ON j.id = a.job_id
@@ -220,6 +236,8 @@ def check_status():
                     'campus': row['campus'],
                     'applied_date': str(row['applied_at'])[:10],
                     'screened': bool(row['is_screened']),
+                    # the status page shows the "replace a document" link only while that is still allowed
+                    'can_replace': documents_can_be_replaced(row),
                 }
 
     return render_template('applicant/status.html', result=result, searched=searched)

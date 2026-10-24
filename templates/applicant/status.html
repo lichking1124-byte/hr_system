@@ -50,6 +50,9 @@
         {% endif %}
         The HR office will contact you through the email you provided about the result.
       </p>
+      {% if result.can_replace %}
+      <p class="note">Uploaded the wrong file? <a href="/status/documents">Replace a document</a></p>
+      {% endif %}
       <p class="note"><a href="/status">Check another application</a></p>
     {% else %}
       <form method="post">
