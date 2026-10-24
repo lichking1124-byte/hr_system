@@ -229,6 +229,25 @@ def check_document_slots(documents_text):
 
 
 # ------------------------------------------------------------------ the checks
+# Degree levels. A bachelor's diploma must not satisfy a "Master's degree" posting.
+_LEVEL_WORDS = {'associate': 1, 'bachelor': 2, 'bachelors': 2, 'baccalaureate': 2,
+                'master': 3, 'masters': 3, 'masteral': 3,
+                'doctor': 4, 'doctors': 4, 'doctorate': 4, 'doctoral': 4}
+_LEVEL_PATTERN = re.compile(
+    r'\b(associate|bachelors?|baccalaureate|masters?|masteral|doctors?|doctorate|doctoral)\s+(?:of|in|degree)\b')
+_LEVEL_ABBREVIATIONS = {'bs': 2, 'ba': 2, 'ab': 2, 'bsc': 2, 'msc': 3, 'mba': 3, 'phd': 4, 'edd': 4}
+LEVEL_NAMES = {1: 'associate', 2: "bachelor's", 3: "master's", 4: 'doctorate'}
+
+
+def _degree_levels(text):
+    """Degree levels named in a text. A level word counts only when it is written like a degree
+    ("Master of ...", "Master's degree"), so a course called "Master Plan" does not count."""
+    low = re.sub(r"[\u2019']", '', (text or '').lower())
+    levels = [_LEVEL_WORDS[m.group(1)] for m in _LEVEL_PATTERN.finditer(low)]
+    levels += [_LEVEL_ABBREVIATIONS[t] for t in re.findall(r'[a-z]+', low) if t in _LEVEL_ABBREVIATIONS]
+    return levels
+
+
 def _check_education(required_text, documents_text):
     """
     Returns (status, detail). status is 'pass', 'fail' (clear failure in a readable
@@ -243,6 +262,7 @@ def _check_education(required_text, documents_text):
 
     posting_words = set(_tokens(required_text))
     needs_degree_words = bool(posting_words & DEGREE_WORDS)
+    required_level = min(_degree_levels(required_text), default=0)    # lowest level the posting accepts
 
     # alternatives: "BSIT, BS Computer Science or any related course"
     alternatives = []
@@ -257,6 +277,11 @@ def _check_education(required_text, documents_text):
         has_degree_words = bool(doc_tokens & DEGREE_WORDS)
         if needs_degree_words and not has_degree_words:
             continue
+        slot_level = max(_degree_levels(text), default=0)
+        if required_level and slot_level and slot_level < required_level:
+            continue                              # a lower degree than the posting asks for
+        if required_level >= 3 and not slot_level:
+            continue                              # cannot confirm a master's or doctorate
         if not alternatives:
             return 'pass', f'degree words found in "{slot}"'
         for alt_text, key in alternatives:
@@ -267,6 +292,13 @@ def _check_education(required_text, documents_text):
     looks_ok = any(any(m in t.lower() for m in DIPLOMA_MARKERS) for t in readable.values())
     if not looks_ok:
         return 'unclear', 'the Diploma / Transcript does not look like one, so it cannot be judged'
+    best_level = max((max(_degree_levels(t), default=0) for t in readable.values()), default=0)
+    if required_level and best_level and best_level < required_level:
+        return 'fail', (f'the readable Diploma / Transcript shows a {LEVEL_NAMES[best_level]} degree, '
+                        f'but the posting requires {LEVEL_NAMES[required_level]} level or higher')
+    if required_level >= 3 and not best_level:
+        return 'unclear', (f'the Diploma / Transcript does not show whether the degree is {LEVEL_NAMES[required_level]} '
+                           f'level, so HR should check it')
     if needs_degree_words and not any(set(_tokens(t)) & DEGREE_WORDS for t in readable.values()):
         return 'fail', 'the readable Diploma / Transcript shows no degree words (bachelor, master, etc.)'
     return 'fail', f'the readable Diploma / Transcript does not contain the main words of the required degree ({names})'
@@ -698,12 +730,10 @@ def decide(job_specs, documents_text, as_of=None, reading=None):
 
     strengths, weaknesses, auto_fail = [], [], []
     met = total = 0
-    unclear = False
 
     # 1 + 2: documents
     missing_docs = check_required_documents(job_specs, documents_text)
     if missing_docs:
-        unclear = True
         weaknesses.append('Required documents missing: ' + ', '.join(missing_docs))
     elif job_specs.get('required_documents'):
         strengths.append('Required documents: all uploaded')
@@ -732,7 +762,7 @@ def decide(job_specs, documents_text, as_of=None, reading=None):
                 if status == 'fail' and is_mand:
                     auto_fail.append(f'Disqualified: mandatory education requirement not met ({required_text})')
                 else:
-                    unclear = True
+                    pass
             continue
 
         if key == 'experience':
@@ -750,7 +780,7 @@ def decide(job_specs, documents_text, as_of=None, reading=None):
                     if status == 'fail' and is_mand and not doc_problem:
                         auto_fail.append(f'Disqualified: mandatory experience requirement not met ({detail})')
                     else:
-                        unclear = True
+                        pass
                 continue
 
         status, found, missing, declarations = _check_terms(required_text, documents_text,
@@ -766,7 +796,6 @@ def decide(job_specs, documents_text, as_of=None, reading=None):
             line = f'{label} ({tag}) verified: found {", ".join(found)}'
             strengths.append(line)
         elif status == 'noterms':
-            unclear = True
             weaknesses.append(f'{label} ({tag}) could not be checked by the system: {required_text} '
                               f'[no key terms could be taken from it. HR should check by hand]')
         else:
@@ -778,7 +807,7 @@ def decide(job_specs, documents_text, as_of=None, reading=None):
                 auto_fail.append(f'Disqualified: mandatory {label.lower()} requirement not met '
                                  f'(none of these found: {", ".join(missing)})')
             else:
-                unclear = True
+                pass
 
     if verified is not None:
         n_bad = len(verified['rejected'])

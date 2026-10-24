@@ -479,5 +479,69 @@ class Presentation(unittest.TestCase):
         self.assertNotIn('Resume + Resume', text)
 
 
+BACHELOR_DIPLOMA = SAMPLE_DOCS['Diploma']          # Bachelor of Science in Information Technology
+MASTER_DIPLOMA = ("SAMPLE STATE UNIVERSITY DIPLOMA This is to certify that JUAN DELA CRUZ has completed all the "
+                  "requirements for the degree of MASTER OF SCIENCE IN INFORMATION TECHNOLOGY and is hereby conferred "
+                  "this degree.")
+
+
+class DegreeLevel(unittest.TestCase):
+    """A lower degree must not satisfy a posting that asks for a higher one."""
+    BASE = dict(SAMPLE_JOB, experience='', skills='', other_requirements='',
+                mandatory_requirements=['education'], required_documents=[])
+
+    def docs(self, diploma):
+        return {'Diploma': diploma, 'Resume': SAMPLE_DOCS['Resume']}
+
+    def result(self, posting, diploma, mandatory=True):
+        job = dict(self.BASE, education=posting, mandatory_requirements=['education'] if mandatory else [])
+        return decide(job, self.docs(diploma), AS_OF)
+
+    def test_bachelor_diploma_does_not_meet_a_masters_posting(self):
+        r = self.result("Master's degree in Information Technology", BACHELOR_DIPLOMA)
+        self.assertEqual(r['result'], 'unqualified')
+        self.assertTrue(any("bachelor's degree" in w and "master's" in w for w in r['weaknesses']))
+
+    def test_same_but_not_mandatory_goes_to_under_review(self):
+        self.assertEqual(self.result("Master's degree in Information Technology", BACHELOR_DIPLOMA, False)['result'], 'under_review')
+
+    def test_masteral_wording_is_understood(self):
+        self.assertEqual(self.result('Masteral degree in Information Technology', BACHELOR_DIPLOMA)['result'], 'unqualified')
+
+    def test_master_diploma_meets_a_masters_posting(self):
+        self.assertEqual(self.result("Master's degree in Information Technology", MASTER_DIPLOMA)['result'], 'qualified')
+
+    def test_a_higher_degree_meets_a_bachelors_posting(self):
+        self.assertEqual(self.result("Bachelor's degree in Information Technology", MASTER_DIPLOMA)['result'], 'qualified')
+
+    def test_masters_diploma_does_not_meet_a_doctorate_posting(self):
+        self.assertEqual(self.result('Doctorate in Information Technology', MASTER_DIPLOMA)['result'], 'unqualified')
+
+    def test_associate_diploma_does_not_meet_a_bachelors_posting(self):
+        assoc = "SAMPLE COLLEGE DIPLOMA This is to certify that Juan completed the Associate in Computer Technology degree, conferred 2022."
+        self.assertEqual(self.result('BS Information Technology', assoc)['result'], 'unqualified')
+
+    def test_a_course_called_master_plan_does_not_raise_the_level(self):
+        diploma = BACHELOR_DIPLOMA + " Transcript of Records: IT 450 Enterprise Master Plan 3 units 1.25"
+        self.assertEqual(self.result("Master's degree in Information Technology", diploma)['result'], 'unqualified')
+
+    def test_a_title_like_ms_or_ma_is_not_a_degree(self):
+        diploma = BACHELOR_DIPLOMA + " Registrar: Ms. Ma. Cristina Reyes"
+        self.assertEqual(self.result("Master's degree in Information Technology", diploma)['result'], 'unqualified')
+
+    def test_a_diploma_that_does_not_state_its_level_goes_to_under_review_for_a_masters_posting(self):
+        vague = "SAMPLE STATE UNIVERSITY DIPLOMA has completed the degree of INFORMATION TECHNOLOGY, conferred 2024."
+        r = self.result("Master's degree in Information Technology", vague)
+        self.assertEqual(r['result'], 'under_review')
+        self.assertEqual(r['auto_fail_reasons'], [])
+
+    def test_any_field_bachelors_posting_still_works(self):
+        self.assertEqual(self.result("Bachelor's degree in any field", BACHELOR_DIPLOMA)['result'], 'qualified')
+        self.assertEqual(self.result("Bachelor's degree in any field", MASTER_DIPLOMA)['result'], 'qualified')
+
+    def test_postings_that_name_no_level_are_unchanged(self):
+        self.assertEqual(self.result('Information Technology graduate', BACHELOR_DIPLOMA)['result'], 'qualified')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
