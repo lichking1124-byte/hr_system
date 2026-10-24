@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Correct a document{% endblock %}
+
+{% block extra_style %}
+.doc-wrap { max-width: 760px; margin: 0 auto; }
+.doc-card { background: white; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 6px rgba(103,30,30,0.08); border-top: 3px solid var(--plum); margin-bottom: 16px; }
+.doc-card h3 { margin: 0 0 6px; color: var(--plum); font-size: 16px; }
+.doc-meta { font-size: 13px; color: #666; line-height: 1.7; }
+.doc-files { font-size: 13px; margin: 6px 0 10px; }
+.doc-files li { margin: 2px 0; }
+.doc-none { color: #a33; font-style: italic; }
+.doc-msg { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 14px; }
+.doc-ok { background: #d4edda; color: #1a4d24; border-left: 4px solid #2d7a3a; }
+.doc-err { background: #fde8e8; color: var(--plum); border-left: 4px solid var(--plum); }
+.doc-locked { background: #fff3cd; color: #5c4400; border-left: 4px solid #e0a800; }
+.doc-form input[type=text], .doc-form input[type=email] { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #ccc; border-radius: 6px; margin: 4px 0 12px; font: inherit; }
+.doc-form label { font-size: 13px; font-weight: bold; color: #444; }
+.doc-small { font-size: 12px; color: #777; margin-top: 6px; }
+{% endblock %}
+
+{% block content %}
+<div class="doc-wrap">
+    <div class="page-header">
+        <h1>Correct a document</h1>
+        <p>Uploaded the wrong file? You can replace it here.</p>
+    </div>
+
+    {% if message %}<div class="doc-msg doc-ok">{{ message }}</div>{% endif %}
+    {% if error %}<div class="doc-msg doc-err">{{ error }}</div>{% endif %}
+
+    {% if not applicant %}
+    <div class="doc-card">
+        <h3>Find your application</h3>
+        <form class="doc-form" method="post" action="/status/documents">
+            <label for="control_number">Control number</label>
+            <input type="text" id="control_number" name="control_number" placeholder="BULSU-2026-00001" value="{{ control_number }}" required>
+            <label for="email">Email you applied with</label>
+            <input type="email" id="email" name="email" value="{{ email }}" required>
+            <button type="submit" class="btn btn-primary">Continue</button>
+        </form>
+    </div>
+    {% else %}
+    <div class="doc-card">
+        <h3>{{ applicant.control_number }}</h3>
+        <div class="doc-meta">{{ applicant.job_title }} &nbsp;|&nbsp; {{ applicant.job_campus }}</div>
+    </div>
+
+    {% if not allowed %}
+    <div class="doc-msg doc-locked">Your documents can no longer be changed here because your application has already been processed. Please contact HR if something needs correcting.</div>
+    {% else %}
+    <div class="doc-small" style="margin-bottom:12px;">Replace only the file that is wrong. Make sure each file matches its document type, and upload PDF or Word (.docx) files only.</div>
+    {% endif %}
+
+    {% for slot in slots %}
+    <div class="doc-card">
+        <h3>{{ slot.type }}</h3>
+        {% if slot.files %}
+        <ul class="doc-files">{% for f in slot.files %}<li>{{ f }}</li>{% endfor %}</ul>
+        {% else %}
+        <div class="doc-files doc-none">{{ 'No file uploaded.' if slot.optional else 'No file found.' }}</div>
+        {% endif %}
+        {% if allowed %}
+        <form class="doc-form" method="post" action="/status/documents" enctype="multipart/form-data">
+            <input type="hidden" name="control_number" value="{{ applicant.control_number }}">
+            <input type="hidden" name="email" value="{{ email }}">
+            <input type="hidden" name="action" value="replace">
+            <input type="hidden" name="slot" value="{{ slot.type }}">
+            <input type="file" name="file" accept=".pdf,.docx" multiple required>
+            <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Replace the current {{ slot.type }} file(s) with the file(s) you chose?');">{{ 'Upload' if not slot.files else 'Replace' }}</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <div style="margin-top:16px;"><a href="/status">&larr; Back to application status</a></div>
+</div>
+{% endblock %}

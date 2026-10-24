@@ -86,6 +86,18 @@
             </div>
         </div>
 
+        {% if replaced_docs %}
+        <div class="review-card">
+            <h3>Documents replaced by the applicant</h3>
+            <div class="review-meta">
+                {% for d in replaced_docs %}
+                {{ d.type }}: <em>{{ d.name }}</em> was replaced{% if d.when %} on {{ d.when }}{% endif %}<br>
+                {% endfor %}
+                The viewer below shows the current files only.
+            </div>
+        </div>
+        {% endif %}
+
         <div class="review-card">
             <h3>Screening result</h3>
             {% if a.is_screened %}

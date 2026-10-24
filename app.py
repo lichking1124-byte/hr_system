@@ -55,6 +55,7 @@ def ensure_screening_columns():
         for column in ('ai_reading', 'ai_reading_hash', 'system_result', 'hr_decision',
                        'hr_decision_reason', 'hr_decision_by', 'hr_decision_at'):
             conn.execute(f"ALTER TABLE applicants ADD COLUMN IF NOT EXISTS {column} TEXT")
+        conn.execute("ALTER TABLE applicant_documents ADD COLUMN IF NOT EXISTS replaced_at TEXT")
         conn.commit()
     except Exception as e:
         print(f"screening columns check failed: {e}")
@@ -222,6 +223,106 @@ def check_status():
                 }
 
     return render_template('applicant/status.html', result=result, searched=searched)
+
+MAX_REPLACEMENT_FILES = 5
+
+
+def documents_can_be_replaced(applicant):
+    """The rule for when an applicant may still correct a document.
+    Allowed: before HR has screened the application, or while it is Under review.
+    Locked: once the application is Qualified or Disqualified, or HR has decided it.
+    (Change this one function if HR wants a different window.)"""
+    if _col(applicant, 'hr_decision'):
+        return False
+    if not applicant['is_screened']:
+        return True
+    return applicant['screening_result'] == 'under_review'
+
+
+def _display_filename(stored, doc_type):
+    """Stored names look like 'resume_myfile.pdf'. Show the applicant's own file name."""
+    prefix = doc_type.replace(' ', '_').lower() + '_'
+    return stored[len(prefix):] if stored.startswith(prefix) else stored
+
+
+@app.route('/status/documents', methods=['GET', 'POST'])
+def applicant_documents_page():
+    """An applicant (control number + email) can swap a wrongly uploaded file for the right one."""
+    ctx = dict(applicant=None, slots=[], allowed=False, error=None, message=None,
+               control_number='', email='')
+    if request.method != 'POST':
+        return render_template('applicant/documents.html', **ctx)
+
+    control_number = request.form.get('control_number', '').strip().upper()
+    email = request.form.get('email', '').strip().lower()
+    ctx.update(control_number=control_number, email=email)
+
+    conn = get_db()
+    applicant = None
+    if control_number and email:
+        applicant = conn.execute('''
+            SELECT a.*, j.title AS job_title, j.campus AS job_campus, j.required_documents AS job_required_documents
+            FROM applicants a JOIN job_postings j ON j.id = a.job_id
+            WHERE a.control_number = ? AND LOWER(a.email) = ?
+        ''', (control_number, email)).fetchone()
+    if not applicant:
+        conn.close()
+        ctx['error'] = 'We could not find an application with that control number and email.'
+        return render_template('applicant/documents.html', **ctx)
+
+    required_docs = json.loads(applicant['job_required_documents']) if applicant['job_required_documents'] else []
+    allowed = documents_can_be_replaced(applicant)
+
+    if request.form.get('action') == 'replace':
+        slot = request.form.get('slot', '')
+        files = [f for f in request.files.getlist('file') if f and f.filename][:MAX_REPLACEMENT_FILES]
+        if not allowed:
+            ctx['error'] = ('Your documents can no longer be changed here because your application has already '
+                            'been processed. Please contact HR if something needs correcting.')
+        elif slot not in required_docs:
+            ctx['error'] = 'That document type is not part of this application.'
+        elif not files:
+            ctx['error'] = 'Please choose the file you want to upload.'
+        elif any(os.path.splitext(f.filename)[1].lower() not in ('.pdf', '.docx') for f in files):
+            ctx['error'] = 'Please upload PDF or Word (.docx) files only.'
+        else:
+            try:
+                field_name = slot.replace(' ', '_').lower()
+                uploaded = [(f"{field_name}_{f.filename}", upload_file(f, folder=f"applicant_{applicant['id']}"))
+                            for f in files]          # upload first: if it fails, nothing has changed
+                now = datetime.utcnow().isoformat(timespec='seconds')
+                conn.execute('UPDATE applicant_documents SET replaced_at = ? '
+                             'WHERE applicant_id = ? AND document_type = ? AND replaced_at IS NULL',
+                             (now, applicant['id'], slot))
+                for filename, cloud_url in uploaded:
+                    conn.execute('INSERT INTO applicant_documents (applicant_id, document_type, filename, filepath) '
+                                 'VALUES (?, ?, ?, ?)', (applicant['id'], slot, filename, cloud_url))
+                if applicant['is_screened']:
+                    # the old result was about the old files: HR must screen this applicant again
+                    conn.execute('UPDATE applicants SET is_screened = 0 WHERE id = ?', (applicant['id'],))
+                conn.commit()
+                log_action('application.document_replaced', 'applicant', applicant['id'],
+                           f'slot={slot}; files={len(uploaded)}', username='(applicant)', role='applicant')
+                ctx['message'] = (f'Your "{slot}" file was replaced. HR will check your application again.')
+            except Exception as e:
+                print(f"Document replacement failed for applicant {applicant['id']}: {e}")
+                ctx['error'] = 'Your file could not be uploaded. Nothing was changed. Please try again.'
+        # the rules may have changed because of this replacement
+        applicant = conn.execute('''
+            SELECT a.*, j.title AS job_title, j.campus AS job_campus, j.required_documents AS job_required_documents
+            FROM applicants a JOIN job_postings j ON j.id = a.job_id WHERE a.id = ?
+        ''', (applicant['id'],)).fetchone()
+        allowed = documents_can_be_replaced(applicant)
+
+    current = _applicant_documents(conn, applicant['id'])
+    conn.close()
+    slots = [{'type': t,
+              'optional': t.endswith('(if applicable)'),
+              'files': [_display_filename(d['filename'], t) for d in current if d['document_type'] == t]}
+             for t in required_docs]
+    ctx.update(applicant=applicant, slots=slots, allowed=allowed)
+    return render_template('applicant/documents.html', **ctx)
+
 
 # ─── ADMIN ROUTES ────────────────────────────────────────────────
 
@@ -475,7 +576,7 @@ def _doc_ext(doc):
 def _applicant_documents(conn, applicant_id):
     # Fixed order so the position in this list can be used as the document's id
     return conn.execute(
-        'SELECT * FROM applicant_documents WHERE applicant_id = ? '
+        'SELECT * FROM applicant_documents WHERE applicant_id = ? AND replaced_at IS NULL '
         'ORDER BY document_type, filename, filepath', (applicant_id,)
     ).fetchall()
 
@@ -491,6 +592,17 @@ def admin_applicant_detail(job_id, applicant_id):
         'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
     ).fetchone()
     docs = _applicant_documents(conn, applicant_id) if applicant else []
+    replaced_docs = []
+    if applicant:
+        for r in conn.execute('SELECT document_type, filename, replaced_at FROM applicant_documents '
+                              'WHERE applicant_id = ? AND replaced_at IS NOT NULL ORDER BY replaced_at',
+                              (applicant_id,)).fetchall():
+            try:
+                when = (datetime.fromisoformat(str(r['replaced_at'])) + timedelta(hours=8)).strftime('%b %d, %Y %I:%M %p')
+            except ValueError:
+                when = ''
+            replaced_docs.append({'type': r['document_type'],
+                                  'name': _display_filename(r['filename'], r['document_type']), 'when': when})
 
     # HR clicked "Ask AI for a note". The AI only advises; it never changes the group.
     ai_note = None
@@ -530,7 +642,8 @@ def admin_applicant_detail(job_id, applicant_id):
 
     return render_template('admin/applicant_detail.html',
                            job=job, a=applicant, docs=doc_list, selected=selected,
-                           ai_note=ai_note, ai_error=ai_error, hr_when=hr_when)
+                           ai_note=ai_note, ai_error=ai_error, hr_when=hr_when,
+                           replaced_docs=replaced_docs)
 
 
 @app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/document/<int:idx>')
@@ -597,7 +710,7 @@ def admin_view_document(job_id, applicant_id, idx):
 
 def load_documents_text(conn, applicant_id):
     docs = conn.execute(
-        'SELECT * FROM applicant_documents WHERE applicant_id = ?',
+        'SELECT * FROM applicant_documents WHERE applicant_id = ? AND replaced_at IS NULL',
         (applicant_id,)
     ).fetchall()
 
@@ -965,7 +1078,7 @@ def download_applicant_documents(job_id, applicant_id):
     conn = get_db()
     applicant = conn.execute('SELECT * FROM applicants WHERE id = ? AND job_id = ?',
                             (applicant_id, job_id)).fetchone()
-    docs = conn.execute('SELECT * FROM applicant_documents WHERE applicant_id = ?',
+    docs = conn.execute('SELECT * FROM applicant_documents WHERE applicant_id = ? AND replaced_at IS NULL',
                        (applicant_id,)).fetchall()
     conn.close()
 
@@ -1010,7 +1123,7 @@ def download_all_documents(job_id):
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for applicant in applicants:
             conn = get_db()
-            docs = conn.execute('SELECT * FROM applicant_documents WHERE applicant_id = ?',
+            docs = conn.execute('SELECT * FROM applicant_documents WHERE applicant_id = ? AND replaced_at IS NULL',
                                (applicant['id'],)).fetchall()
             conn.close()
 
