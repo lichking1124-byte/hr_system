@@ -77,6 +77,16 @@
 .group-head { font-size: 18px; color: var(--plum); margin: 26px 0 4px; }
 .group-head span { color: var(--text-muted); font-weight: normal; font-size: 14px; }
 .group-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5; }
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 18px; }
+.tab {
+    padding: 8px 16px; border-radius: 20px; background: white; border: 1px solid #ddd;
+    color: var(--plum); text-decoration: none; font-size: 13px; font-weight: 700; letter-spacing: .3px;
+    box-shadow: 0 1px 3px rgba(103,30,30,0.06);
+}
+.tab:hover { border-color: var(--plum); }
+.tab.active { background: var(--plum); color: #fff; border-color: var(--plum); }
+.tab .n { opacity: .75; margin-left: 4px; font-weight: 600; }
+.tab-empty { background: white; border-radius: 8px; padding: 30px; text-align: center; color: #999; font-size: 14px; }
 .check-details { margin-top: 8px; }
 .check-details > summary {
     cursor: pointer; font-size: 13px; font-weight: 600; color: var(--plum);
@@ -91,8 +101,9 @@
 </div>
 
 <p style="font-size:13px; color:var(--text-muted); margin:-6px 0 16px;">
-    How results are decided: the AI reads each applicant's documents and quotes the evidence it found.
-    The system checks that every quote really appears in the documents, then fixed rules sort each applicant into Qualified, Under review or Disqualified. HR makes the final decision.
+    How results are decided: the AI reads each applicant's documents and writes down what it finds, with quotes.
+    Plain code checks every quote against the documents, then a fixed checklist sorts each applicant into Qualified, Under review or Disqualified.
+    HR settles the Under review cases and makes the final decision.
 </p>
 
 <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
@@ -119,20 +130,20 @@
     </a>
 </div>
 
-<div class="stats-bar">
-    <span>📋 Total: <strong>{{ applicants|length }}</strong></span>
-    <span style="color:#2d7a3a;">✅ Qualified:
-        <strong>{{ applicants|selectattr('screening_result','equalto','qualified')|list|length }}</strong>
-    </span>
-    <span style="color:var(--gold-dark);">🔎 Under review:
-        <strong>{{ applicants|selectattr('screening_result','equalto','under_review')|list|length }}</strong>
-    </span>
-    <span style="color:var(--plum);">❌ Disqualified:
-        <strong>{{ applicants|selectattr('screening_result','equalto','unqualified')|list|length }}</strong>
-    </span>
-    <span style="color:#888;">⏳ Not screened:
-        <strong>{{ applicants|selectattr('is_screened','equalto',0)|list|length }}</strong>
-    </span>
+{# Sort every applicant once. "Screened" matters: an applicant who replaced a document is sent back to
+   "not screened" but still carries the old result, so the result is only trusted when is_screened is set. #}
+{% set screened = applicants|selectattr('is_screened')|list %}
+{% set qualified = screened|selectattr('screening_result','equalto','qualified')|list %}
+{% set under_review = screened|selectattr('screening_result','equalto','under_review')|list %}
+{% set disqualified = screened|selectattr('screening_result','equalto','unqualified')|list %}
+{% set unscreened = applicants|rejectattr('is_screened')|list %}
+
+<div class="tabs" role="tablist">
+    <a href="#all" class="tab active" data-tab="all">ALL <span class="n">{{ applicants|length }}</span></a>
+    <a href="#qualified" class="tab" data-tab="qualified">QUALIFIED <span class="n">{{ qualified|length }}</span></a>
+    <a href="#under_review" class="tab" data-tab="under_review">UNDER REVIEW <span class="n">{{ under_review|length }}</span></a>
+    <a href="#unqualified" class="tab" data-tab="unqualified">DISQUALIFIED <span class="n">{{ disqualified|length }}</span></a>
+    <a href="#unscreened" class="tab" data-tab="unscreened">UNSCREENED <span class="n">{{ unscreened|length }}</span></a>
 </div>
 
 {% macro card(a) %}
@@ -224,26 +235,57 @@
 </div>
 {% endmacro %}
 
-{% macro group(title, hint, items) %}
-{% if items %}
-<h2 class="group-head">{{ title }} <span>({{ items|length }})</span></h2>
-<div class="group-hint">{{ hint }}</div>
-{% for a in items %}{{ card(a) }}{% endfor %}
-{% endif %}
+{% macro group(tab, title, hint, items) %}
+<section class="tab-section{{ '' if items else ' empty' }}" data-tab="{{ tab }}">
+    <h2 class="group-head">{{ title }} <span>({{ items|length }})</span></h2>
+    <div class="group-hint">{{ hint }}</div>
+    {% for a in items %}{{ card(a) }}{% else %}<div class="tab-empty">No applicants in this group.</div>{% endfor %}
+</section>
 {% endmacro %}
 
 {% if applicants %}
-    {{ group('✅ Qualified', 'Every requirement was verified from readable documents.',
-             applicants|selectattr('screening_result','equalto','qualified')|list) }}
-    {{ group('🔎 Under review', 'The system could not clearly confirm everything, for example a scan, a photo, a file in the wrong slot, or a requirement that is not mandatory. HR should check the documents.',
-             applicants|selectattr('screening_result','equalto','under_review')|list) }}
-    {{ group('❌ Disqualified', 'The documents were readable, but a mandatory requirement was not verified.',
-             applicants|selectattr('screening_result','equalto','unqualified')|list) }}
-    {{ group('⏳ Not screened yet', 'Click Screen above to check these applicants.',
-             applicants|selectattr('is_screened','equalto',0)|list) }}
+    {{ group('qualified', '✅ Qualified', 'Every requirement was verified from readable documents.', qualified) }}
+    {{ group('under_review', '🔎 Under review', 'The system could not clearly confirm everything, for example a scan, a photo, a file in the wrong slot, or a requirement that is not mandatory. HR should check the documents.', under_review) }}
+    {{ group('unqualified', '❌ Disqualified', 'The documents were readable, but a mandatory requirement was not verified.', disqualified) }}
+    {{ group('unscreened', '⏳ Not screened yet', 'Click Screen above to check these applicants. This also includes applicants who replaced a document and need a new check.', unscreened) }}
 {% else %}
     <div class="card" style="text-align:center; color:#aaa; padding:50px;">
         No applicants yet for this position.
     </div>
 {% endif %}
+
+<script>
+(function () {
+    var key = 'applicantsTab:{{ job.id }}';
+    var valid = ['all', 'qualified', 'under_review', 'unqualified', 'unscreened'];
+    var tabs = document.querySelectorAll('.tab');
+    var sections = document.querySelectorAll('.tab-section');
+    if (!tabs.length) { return; }
+
+    function show(name) {
+        if (valid.indexOf(name) < 0) { name = 'all'; }
+        for (var i = 0; i < tabs.length; i++) {
+            tabs[i].classList.toggle('active', tabs[i].getAttribute('data-tab') === name);
+        }
+        for (var j = 0; j < sections.length; j++) {
+            var s = sections[j];
+            var empty = s.classList.contains('empty');
+            if (name === 'all') { s.style.display = empty ? 'none' : ''; }
+            else { s.style.display = (s.getAttribute('data-tab') === name) ? '' : 'none'; }
+        }
+        try { sessionStorage.setItem(key, name); } catch (e) {}
+    }
+
+    for (var k = 0; k < tabs.length; k++) {
+        tabs[k].addEventListener('click', function (e) {
+            e.preventDefault();
+            show(this.getAttribute('data-tab'));
+        });
+    }
+
+    var start = (location.hash || '').replace('#', '');
+    if (!start) { try { start = sessionStorage.getItem(key) || 'all'; } catch (e) { start = 'all'; } }
+    show(start);
+})();
+</script>
 {% endblock %}
