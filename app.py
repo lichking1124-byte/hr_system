@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, date
 from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
 from screening_rules import decide, posting_terms
+from duplicates import PeopleIndex, same_email
 from ai_screener import advise_applicant, read_documents
 from exporter import export_qualified, export_all
 from ad_generator import generate_job_ad_image
@@ -165,6 +166,15 @@ def apply(job_id):
         full_name = request.form['full_name']
         email = request.form['email']
         phone = request.form['phone']
+
+        # The same email cannot apply to the SAME position twice. Applying to other positions is allowed.
+        conn = get_db()
+        earlier = conn.execute('SELECT email FROM applicants WHERE job_id = ?', (job_id,)).fetchall()
+        conn.close()
+        if any(same_email(email, r['email']) for r in earlier):
+            log_action('application.duplicate_blocked', 'job', job_id,
+                       'the same email had already applied to this position', username='(applicant)', role='applicant')
+            return render_template('applicant/already_applied.html', job=job), 409
 
         conn = get_db()
         cursor = conn.cursor()
@@ -566,9 +576,38 @@ def admin_applicants(job_id):
     applicants = conn.execute(
         'SELECT * FROM applicants WHERE job_id = ? ORDER BY applied_at DESC', (job_id,)
     ).fetchall()
+
+    # Which applicants look like the same person as someone else (information for HR only)
+    related_map = {}
+    if applicants:
+        people = PeopleIndex(_all_applications(conn))
+        for a in applicants:
+            links = people.related(dict(a))
+            if links:
+                same = sum(1 for m in links if m['same_position'])
+                related_map[a['id']] = {'same_position': same, 'other_positions': len(links) - same}
     conn.close()
 
-    return render_template('admin/applicants.html', job=job, applicants=applicants)
+    return render_template('admin/applicants.html', job=job, applicants=applicants, related_map=related_map)
+
+STATUS_LABELS = {'qualified': 'Qualified', 'under_review': 'Under review', 'unqualified': 'Disqualified'}
+
+
+def _all_applications(conn):
+    """Every application, with its position, for matching people across positions."""
+    rows = conn.execute('''
+        SELECT a.id, a.job_id, a.full_name, a.email, a.phone, a.control_number, a.applied_at,
+               a.is_screened, a.screening_result, j.title AS job_title, j.campus AS job_campus
+        FROM applicants a JOIN job_postings j ON j.id = a.job_id
+    ''').fetchall()
+    return [dict(r) for r in rows]
+
+
+def _status_label(row):
+    if not row.get('is_screened'):
+        return 'Not screened yet'
+    return STATUS_LABELS.get(row.get('screening_result'), 'Not screened yet')
+
 
 DOC_MIMETYPES = {
     '.pdf': 'application/pdf',
@@ -622,6 +661,15 @@ def admin_applicant_detail(job_id, applicant_id):
             replaced_docs.append({'type': r['document_type'],
                                   'name': _display_filename(r['filename'], r['document_type']), 'when': when})
 
+    related_apps = []
+    if applicant:
+        for m in PeopleIndex(_all_applications(conn)).related(dict(applicant)):
+            o = m['other']
+            related_apps.append({'id': o['id'], 'job_id': o['job_id'], 'name': o['full_name'],
+                                 'control_number': o['control_number'], 'job_title': o['job_title'],
+                                 'campus': o['job_campus'], 'applied_at': o['applied_at'], 'status': _status_label(o),
+                                 'reasons': m['reasons'], 'strong': m['strong'], 'same_position': m['same_position']})
+
     # HR clicked "Ask AI for a note". The AI only advises; it never changes the group.
     ai_note = None
     ai_error = None
@@ -661,7 +709,7 @@ def admin_applicant_detail(job_id, applicant_id):
     return render_template('admin/applicant_detail.html',
                            job=job, a=applicant, docs=doc_list, selected=selected,
                            ai_note=ai_note, ai_error=ai_error, hr_when=hr_when,
-                           replaced_docs=replaced_docs)
+                           replaced_docs=replaced_docs, related_apps=related_apps)
 
 
 @app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/document/<int:idx>')

@@ -51,6 +51,11 @@
 .hr-no { background: var(--plum); color: #fff; border: 0; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .hr-record { background: #eef3fb; border-left: 4px solid #3a62a8; padding: 10px 14px; border-radius: 6px; font-size: 13px; color: #1d3557; line-height: 1.6; }
 .ai-note-small { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+.dup-head { font-size: 13px; font-weight: 700; color: var(--plum); margin: 10px 0 4px; }
+.dup-warn { color: #8a6100; }
+.dup-item { font-size: 13px; line-height: 1.6; padding: 6px 0; border-top: 1px solid #f0e6e6; }
+.dup-item a { color: var(--plum); font-weight: 600; text-decoration: none; }
+.dup-chip { font-size: 11px; padding: 1px 8px; border-radius: 10px; background: #eef3fb; color: #1d3557; border: 1px solid #cfdcf0; margin-right: 4px; }
 .doc-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .doc-tab {
     padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd; background: #fff;
@@ -85,6 +90,32 @@
                 🗓 Applied: {{ (a.applied_at | ph_time) if a.applied_at else '' }}
             </div>
         </div>
+
+        {% macro dup_item(r) %}
+        <div class="dup-item">
+            <a href="/admin/job/{{ r.job_id }}/applicant/{{ r.id }}">{{ r.name }}</a>
+            {% if r.control_number %}<span style="color:#888;">{{ r.control_number }}</span>{% endif %}<br>
+            {{ r.job_title }} ({{ r.campus }}) &middot; applied {{ (r.applied_at | ph_time) if r.applied_at else '' }} &middot; <strong>{{ r.status }}</strong><br>
+            {% for reason in r.reasons %}<span class="dup-chip">{{ reason }}</span>{% endfor %}
+            {% if not r.strong %}<span style="font-size:11px; color:#888;">(name only, a weaker match)</span>{% endif %}
+        </div>
+        {% endmacro %}
+        {% if related_apps %}
+        <div class="review-card">
+            <h3>Other applications by this person</h3>
+            <div class="review-meta" style="line-height:1.5;">Matched by email, phone or name. This is information for HR only and does not change the result.</div>
+            {% set same_position = related_apps|selectattr('same_position')|list %}
+            {% set elsewhere = related_apps|rejectattr('same_position')|list %}
+            {% if same_position %}
+            <div class="dup-head dup-warn">⚠ Possible duplicate for this position</div>
+            {% for r in same_position %}{{ dup_item(r) }}{% endfor %}
+            {% endif %}
+            {% if elsewhere %}
+            <div class="dup-head">Also applied to other positions</div>
+            {% for r in elsewhere %}{{ dup_item(r) }}{% endfor %}
+            {% endif %}
+        </div>
+        {% endif %}
 
         {% if replaced_docs %}
         <div class="review-card">

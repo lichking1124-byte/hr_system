@@ -87,6 +87,9 @@
 .tab.active { background: var(--plum); color: #fff; border-color: var(--plum); }
 .tab .n { opacity: .75; margin-left: 4px; font-weight: 600; }
 .tab-empty { background: white; border-radius: 8px; padding: 30px; text-align: center; color: #999; font-size: 14px; }
+.related-line { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+.rel-chip { font-size: 12px; padding: 2px 9px; border-radius: 10px; background: #eef3fb; color: #1d3557; border: 1px solid #cfdcf0; }
+.rel-warn { background: #fff3cd; color: #5c4400; border-color: #e6d28f; font-weight: 600; }
 .check-details { margin-top: 8px; }
 .check-details > summary {
     cursor: pointer; font-size: 13px; font-weight: 600; color: var(--plum);
@@ -166,6 +169,13 @@
                 📱 {{ a.phone or 'N/A' }} &nbsp;|&nbsp;
                 🗓 Applied: {{ (a.applied_at | ph_time) if a.applied_at else '' }}
             </div>
+            {% set rel = (related_map or {}).get(a.id) %}
+            {% if rel %}
+            <div class="related-line">
+                {% if rel.same_position %}<span class="rel-chip rel-warn">⚠ Possible duplicate for this position</span>{% endif %}
+                {% if rel.other_positions %}<span class="rel-chip">Also applied to {{ rel.other_positions }} other position{{ 's' if rel.other_positions != 1 else '' }}</span>{% endif %}
+            </div>
+            {% endif %}
 
             {% if a.is_screened %}
             <div class="applicant-reason">{{ a.screening_reason }}</div>
