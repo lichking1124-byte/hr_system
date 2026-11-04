@@ -851,3 +851,45 @@ def decide(job_specs, documents_text, as_of=None, reading=None):
         'auto_fail_reasons': auto_fail if result == 'unqualified' else [],
         'ai_rejected': verified['rejected'] if verified else [],
     }
+
+
+# ------------------------------------------------ plain facts for HR's Excel sheet
+# These do NOT affect the group an applicant lands in. They only show HR what the documents say.
+_DEGREE_NAME = re.compile(
+    r"\b(?:Bachelor|Master|Doctor|Associate)(?:['\u2019]s)?(?:\s+degree)?\s+(?:of|in)\s+"
+    r"[A-Za-z][A-Za-z&,.\-\s]{3,90}?"
+    r"(?=\r|\n|\s+(?:major(?:ing)?|minor|with|cum|magna|summa|conferred|is\s+hereby|on\s+the|in\s+the\s+year|"
+    r"from|at|has|having|by)\b|[;:()]|$)", re.I)
+_SMALL_WORDS = {'of', 'in', 'and', 'for', 'the', 'on'}
+
+
+def _tidy_degree(text):
+    text = re.sub(r'\s+', ' ', text).strip(' ,.-')
+    if text.isupper():                                   # a diploma printed in capitals
+        text = ' '.join(w.lower() if w.lower() in _SMALL_WORDS and i else w.capitalize()
+                        for i, w in enumerate(text.split()))
+    return text
+
+
+def find_degree(documents_text):
+    """The degree named on the Diploma / Transcript (plain pattern matching, no AI).
+    Returns the degree(s) as text, highest level first, or '' when none is written clearly."""
+    found = []
+    for slot, text in documents_text.items():
+        if not DIPLOMA_SLOT.search(slot) or not _readable(text):
+            continue
+        for m in _DEGREE_NAME.finditer(text or ''):
+            name = _tidy_degree(m.group(0))
+            if len(name.split()) >= 4 and name.lower() not in [f.lower() for f in found]:
+                found.append(name)
+    found.sort(key=lambda n: -max(_degree_levels(n), default=0))
+    return '; '.join(found[:2])
+
+
+def applicant_profile(documents_text, as_of=None, reading=None):
+    """Education and total dated work experience for the Excel sheet. Uses the same date reading
+    and the same checks on the AI's claims as the checklist, so the numbers agree with it."""
+    as_of = as_of or date.today()
+    verified = verify_reading(reading, documents_text, as_of) if reading else None
+    months, _, _ = measure_experience(documents_text, [], as_of, verified['jobs'] if verified else None)
+    return {'education': find_degree(documents_text), 'experience_months': round(months, 1)}

@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from datetime import datetime, timedelta, date
 from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
-from screening_rules import decide, posting_terms
+from screening_rules import decide, posting_terms, applicant_profile
 from duplicates import PeopleIndex, same_email
 from ai_screener import advise_applicant, read_documents
 from exporter import export_qualified, export_all
@@ -75,7 +75,8 @@ ensure_position_type_column()
 def ensure_screening_columns():
     """The columns for the saved AI reading, HR's decision and replaced documents."""
     _add_missing_columns('applicants', ['ai_reading', 'ai_reading_hash', 'system_result', 'hr_decision',
-                                        'hr_decision_reason', 'hr_decision_by', 'hr_decision_at'])
+                                        'hr_decision_reason', 'hr_decision_by', 'hr_decision_at',
+                                        'education_found', 'experience_months'])
     _add_missing_columns('applicant_documents', ['replaced_at'])
 
 
@@ -861,6 +862,13 @@ def screen_one_applicant(conn, applicant, job_specs, allow_ai=True, force_reread
                   f"\"{_col(applicant, 'hr_decision_reason') or ''}\". "
                   f"The checklist result was {outcome['result'].replace('unqualified', 'disqualified')}: {outcome['reason']}")
 
+    # Plain facts for HR's Excel sheet (they never change the group)
+    try:
+        profile = applicant_profile(documents_text, as_of, reading)
+    except Exception as e:
+        print(f"Profile facts failed for applicant {applicant['id']}: {e}")
+        profile = {'education': None, 'experience_months': None}
+
     conn.execute('''
         UPDATE applicants SET
         screening_score = ?,
@@ -870,6 +878,8 @@ def screen_one_applicant(conn, applicant, job_specs, allow_ai=True, force_reread
         screening_strengths = ?,
         screening_weaknesses = ?,
         system_result = ?,
+        education_found = ?,
+        experience_months = ?,
         is_screened = 1
         WHERE id = ?
     ''', (
@@ -880,6 +890,8 @@ def screen_one_applicant(conn, applicant, job_specs, allow_ai=True, force_reread
         json.dumps(outcome['strengths']),
         json.dumps(weaknesses),
         outcome['result'],          # what the checklist said, kept even after HR decides
+        profile['education'],
+        None if profile['experience_months'] is None else str(profile['experience_months']),
         applicant['id']
     ))
     conn.commit()
@@ -1213,6 +1225,7 @@ def download_qualified(job_id):
         return redirect(url_for('admin_login'))
 
     conn = get_db()
+    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
     applicants = conn.execute(
         "SELECT * FROM applicants WHERE job_id = ? AND screening_result = 'qualified'",
         (job_id,)
@@ -1220,7 +1233,7 @@ def download_qualified(job_id):
     conn.close()
 
     applicants = [dict(a) for a in applicants]
-    buffer = export_qualified(applicants)
+    buffer = export_qualified(applicants, dict(job) if job else None)
 
     if not buffer:
         flash('No qualified applicants to download.')
@@ -1235,6 +1248,7 @@ def download_all(job_id):
         return redirect(url_for('admin_login'))
 
     conn = get_db()
+    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
     applicants = conn.execute(
         'SELECT * FROM applicants WHERE job_id = ? AND is_screened = 1',
         (job_id,)
@@ -1242,7 +1256,7 @@ def download_all(job_id):
     conn.close()
 
     applicants = [dict(a) for a in applicants]
-    buffer = export_all(applicants)
+    buffer = export_all(applicants, dict(job) if job else None)
 
     if not buffer:
         flash('No screened applicants to download.')
