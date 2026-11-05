@@ -1033,7 +1033,10 @@ def admin_reread_one(job_id, applicant_id):
 
 @app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/decide', methods=['POST'])
 def admin_hr_decide(job_id, applicant_id):
-    """HR settles an Under review applicant. The checklist's own result is kept in system_result."""
+    """HR sets or changes an applicant's status to Qualified or Disqualified.
+    Works for any screened applicant (Under review, Qualified or Disqualified). The checklist's own
+    result is always kept in system_result, and every change is written to the audit log with the
+    old and new status."""
     if 'admin' not in session:
         return redirect(url_for('admin_login'))
 
@@ -1045,30 +1048,47 @@ def admin_hr_decide(job_id, applicant_id):
         return back
 
     conn = get_db()
+    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
     applicant = conn.execute(
         'SELECT * FROM applicants WHERE id = ? AND job_id = ?', (applicant_id, job_id)
     ).fetchone()
-    if (not applicant or applicant['screening_result'] != 'under_review'
-            or _col(applicant, 'hr_decision')):
+    if not job or not applicant or not applicant['is_screened']:
         conn.close()
-        flash('Only an Under review applicant without an HR decision can be decided here.')
+        flash('Screen this applicant first, then record the HR decision.')
         return back
+
+    old_status = applicant['screening_result']
+    if old_status == decision:
+        conn.close()
+        flash(f'This applicant is already {HR_LABELS[decision]}.')
+        return back
+
+    # The checklist result stays on record. If HR already decided before, system_result holds it.
+    checklist_result = _col(applicant, 'system_result') if _col(applicant, 'hr_decision') else old_status
+    checklist_result = checklist_result or old_status
 
     who = session.get('admin', 'HR')
     new_reason = (f'HR decision: {HR_LABELS[decision]} by {who} - "{reason}". '
-                  f'The checklist result was under review: {applicant["screening_reason"]}')
+                  f'The checklist result was {checklist_result.replace("unqualified", "disqualified").replace("_", " ")}: '
+                  f'{applicant["screening_reason"]}')
     conn.execute('''
         UPDATE applicants SET
         hr_decision = ?, hr_decision_reason = ?, hr_decision_by = ?, hr_decision_at = ?,
         system_result = ?, screening_result = ?, screening_reason = ?
         WHERE id = ?
     ''', (decision, reason, who, datetime.utcnow().isoformat(timespec='seconds'),
-          'under_review', decision, new_reason, applicant_id))
+          checklist_result, decision, new_reason, applicant_id))
     conn.commit()
+    try:        # rebuild the reason text from the fresh checklist (reuses the saved AI reading, no AI call)
+        fresh = conn.execute('SELECT * FROM applicants WHERE id = ?', (applicant_id,)).fetchone()
+        screen_one_applicant(conn, fresh, build_job_specs(job), allow_ai=False)
+    except Exception as e:
+        print(f"Refreshing the checklist after the HR decision failed for applicant {applicant_id}: {e}")
     conn.close()
     log_action('hr.decision', 'applicant', applicant_id,
-               f'decision={decision}; checklist_result=under_review; reason={reason[:200]}')
-    flash(f'Recorded: {HR_LABELS[decision]}.')
+               f'old_status={old_status}; new_status={decision}; checklist_result={checklist_result}; '
+               f'reason={reason[:200]}')
+    flash(f'Status changed from {STATUS_LABELS.get(old_status, old_status)} to {HR_LABELS[decision]}.')
     return back
 
 

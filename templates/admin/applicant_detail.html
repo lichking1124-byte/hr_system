@@ -172,37 +172,50 @@
             {% endif %}
         </div>
 
-        {% if a.hr_decision %}
+        {% if a.is_screened %}
+        {% set current = a.screening_result %}
+        {% set current_label = 'Qualified' if current == 'qualified' else ('Disqualified' if current == 'unqualified' else 'Under review') %}
         <div class="review-card">
             <h3>HR decision</h3>
+            {% if a.hr_decision %}
             <div class="hr-record">
                 <strong>{{ 'Qualified' if a.hr_decision == 'qualified' else 'Disqualified' }}</strong>
                 by {{ a.hr_decision_by or 'HR' }}{% if hr_when %} on {{ hr_when }}{% endif %}<br>
                 Reason: {{ a.hr_decision_reason }}<br>
                 The system's checklist said: <strong>{{ 'Disqualified' if a.system_result == 'unqualified' else ('Under review' if a.system_result == 'under_review' else ('Qualified' if a.system_result == 'qualified' else a.system_result)) }}</strong>
             </div>
+            {% endif %}
+            <div class="ai-note-small" style="margin-top:{{ '12px' if a.hr_decision else '0' }};">
+                {% if a.hr_decision %}
+                You can change this decision. The change, with the old and new status, is recorded in the audit log.
+                {% elif current == 'under_review' %}
+                The checklist could not settle this applicant. After you check the documents, record your decision.
+                The checklist result stays on record next to it.
+                {% else %}
+                The checklist set this applicant as <strong>{{ current_label }}</strong>. HR can still change the status after
+                reviewing the documents. The change is recorded in the audit log and the checklist result stays on record.
+                {% endif %}
+            </div>
+            <form class="hr-form" method="post" action="/admin/job/{{ job.id }}/applicant/{{ a.id }}/decide">
+                <textarea name="reason" required minlength="5" maxlength="500"
+                          placeholder="Reason for {{ 'the change' if (a.hr_decision or current != 'under_review') else 'your decision' }} (required)"></textarea>
+                <div class="hr-buttons">
+                    {% if current != 'qualified' %}
+                    <button type="submit" name="decision" value="qualified" class="hr-yes"
+                            onclick="return confirm('Change this applicant from {{ current_label }} to Qualified? This is recorded in the audit log.');">Mark Qualified</button>
+                    {% endif %}
+                    {% if current != 'unqualified' %}
+                    <button type="submit" name="decision" value="unqualified" class="hr-no"
+                            onclick="return confirm('Change this applicant from {{ current_label }} to Disqualified? This is recorded in the audit log.');">Mark Disqualified</button>
+                    {% endif %}
+                </div>
+            </form>
+            {% if a.hr_decision %}
             <form method="post" action="/admin/job/{{ job.id }}/applicant/{{ a.id }}/undo-decision" style="margin-top:10px;">
                 <button type="submit" class="hr-no" style="background:#6c757d;"
                         onclick="return confirm('Undo this HR decision? The applicant goes back to the checklist result.');">Undo decision</button>
             </form>
-        </div>
-        {% elif a.is_screened and a.screening_result == 'under_review' %}
-        <div class="review-card">
-            <h3>HR decision</h3>
-            <div class="ai-note-small" style="margin-top:0;">
-                The checklist could not settle this applicant. After you check the documents, record your decision.
-                The checklist result stays on record next to it.
-            </div>
-            <form class="hr-form" method="post" action="/admin/job/{{ job.id }}/applicant/{{ a.id }}/decide">
-                <textarea name="reason" required minlength="5" maxlength="500"
-                          placeholder="Reason for your decision (required)"></textarea>
-                <div class="hr-buttons">
-                    <button type="submit" name="decision" value="qualified" class="hr-yes"
-                            onclick="return confirm('Mark this applicant as Qualified?');">Mark Qualified</button>
-                    <button type="submit" name="decision" value="unqualified" class="hr-no"
-                            onclick="return confirm('Mark this applicant as Disqualified?');">Mark Disqualified</button>
-                </div>
-            </form>
+            {% endif %}
         </div>
         {% endif %}
 

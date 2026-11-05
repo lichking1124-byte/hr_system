@@ -51,12 +51,7 @@
 </div>
 
 <div class="card">
-    <div class="section-title">Job Description</div>
-    <p style="font-size:14px; line-height:1.8; color:#444;">{{ job.description }}</p>
-</div>
-
-<div class="card">
-    <div class="section-title">Qualifications</div>
+    <div class="section-title">Job Requirements</div>
     <div class="spec-item">
         <span class="spec-label">Required Skills:</span>
         <span>{{ job.skills }}</span>
@@ -75,6 +70,11 @@
         <span>{{ job.other_requirements }}</span>
     </div>
     {% endif %}
+</div>
+
+<div class="card">
+    <div class="section-title">Job Description</div>
+    <p style="font-size:14px; line-height:1.8; color:#444;">{{ job.description }}</p>
 </div>
 
 <div class="card">
