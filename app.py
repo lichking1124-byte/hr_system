@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash, Response
+from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash, Response, jsonify
 import os
+import re
 import json
 import time
 import hashlib
@@ -19,7 +20,7 @@ from config import SECRET_KEY, CAMPUSES
 from auth import init_auth, log_action, is_locked_out, utcnow, LOCKOUT_MINUTES
 from accounts import accounts
 from passwords import verify_password
-from doc_presets import PRESETS, DOC_HINTS, VALID_TYPES
+from doc_presets import PRESETS, DOC_HINTS, VALID_TYPES, DEFAULT_DOCS, LIST_KEYS
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -70,6 +71,89 @@ def ensure_position_type_column():
 
 
 ensure_position_type_column()
+
+
+def ensure_extra_field_columns():
+    """HR-defined extra questions on a posting, and the applicants' answers to them."""
+    _add_missing_columns('job_postings', ['extra_fields'])
+    _add_missing_columns('applicants', ['extra_answers'])
+
+
+ensure_extra_field_columns()
+
+
+# ---------------------------------------------------------------- shared document lists
+def _fallback_document_lists():
+    return {'custom': list(DEFAULT_DOCS), 'academic': list(PRESETS['academic']),
+            'non_academic': list(PRESETS['non_academic'])}
+
+
+def seed_document_lists():
+    """First start only: copy the starting lists from doc_presets.py into the database.
+    After that the database is the truth, so HR's adds and deletes stick."""
+    conn = get_db()
+    try:
+        if conn.execute('SELECT COUNT(*) AS n FROM document_lists').fetchone()['n']:
+            return
+        for key, names in _fallback_document_lists().items():
+            for i, name in enumerate(names, start=1):
+                conn.execute('INSERT INTO document_lists (list_key, name, sort_order) VALUES (?, ?, ?) '
+                             'ON CONFLICT DO NOTHING', (key, name, i))
+        conn.commit()
+    except Exception as e:
+        print(f"Seeding the document lists failed: {e}")
+    finally:
+        conn.close()
+
+
+seed_document_lists()
+
+
+def load_document_lists(conn=None):
+    """{'custom': [...], 'academic': [...], 'non_academic': [...]} in the order HR set.
+    Falls back to the starting lists if the table is not available, so the form never breaks."""
+    own = conn is None
+    conn = conn or get_db()
+    out = {k: [] for k in LIST_KEYS}
+    try:
+        for r in conn.execute('SELECT list_key, name FROM document_lists ORDER BY sort_order, id').fetchall():
+            if r['list_key'] in out:
+                out[r['list_key']].append(r['name'])
+    except Exception as e:
+        print(f"Reading the document lists failed, using the starting lists: {e}")
+        return _fallback_document_lists()
+    finally:
+        if own:
+            conn.close()
+    fallback = _fallback_document_lists()
+    return {k: (out[k] or fallback[k]) for k in LIST_KEYS}
+
+
+DOC_NAME_OK = re.compile(r"^\w[\w &()/,.'\-]{1,119}$")
+
+
+def parse_extra_fields(form):
+    """HR's extra applicant questions from the posting form -> [{'label', 'required'}]."""
+    labels = form.getlist('extra_label')
+    needs = form.getlist('extra_required')
+    out, seen = [], set()
+    for i, raw in enumerate(labels):
+        label = re.sub(r'\s+', ' ', (raw or '').strip())[:80]
+        if not label or label.lower() in seen:
+            continue
+        seen.add(label.lower())
+        out.append({'label': label, 'required': (needs[i] if i < len(needs) else '0') == '1'})
+        if len(out) >= 10:
+            break
+    return out
+
+
+def load_extra_fields(job):
+    try:
+        value = json.loads(job['extra_fields']) if job and job['extra_fields'] else []
+        return [f for f in value if isinstance(f, dict) and f.get('label')]
+    except (ValueError, TypeError, KeyError):
+        return []
 
 
 def ensure_screening_columns():
@@ -146,8 +230,16 @@ def apply(job_id):
         return "Job not found", 404
 
     required_docs = json.loads(job['required_documents']) if job['required_documents'] else []
+    extra_fields = load_extra_fields(job)
 
     if request.method == 'POST':
+        extra_answers = []
+        for i, f in enumerate(extra_fields):
+            answer = (request.form.get(f'extra_{i}') or '').strip()[:300]
+            if f.get('required') and not answer:
+                return (f'"{f["label"]}" is required. Go back and try again.', 400)
+            extra_answers.append({'label': f['label'], 'answer': answer})
+
         allowed_types = ('.pdf', '.docx')
         for doc_type in required_docs:
             field_name = doc_type.replace(' ', '_').lower()
@@ -180,9 +272,9 @@ def apply(job_id):
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO applicants (job_id, full_name, email, phone)
-            VALUES (?, ?, ?, ?)
-        ''', (job_id, full_name, email, phone))
+            INSERT INTO applicants (job_id, full_name, email, phone, extra_answers)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (job_id, full_name, email, phone, json.dumps(extra_answers) if extra_answers else None))
         applicant_id = cursor.lastrowid
 
         # Control number: unique, human-readable reference the applicant can
@@ -215,7 +307,7 @@ def apply(job_id):
                                control_number=control_number)
 
     return render_template('applicant/apply.html', job=job, required_docs=required_docs,
-                           hints=DOC_HINTS)
+                           hints=DOC_HINTS, extra_fields=extra_fields)
 
 @app.route('/status', methods=['GET', 'POST'])
 def check_status():
@@ -442,8 +534,8 @@ def admin_new_job():
             INSERT INTO job_postings
             (campus, title, description, skills, experience,
              education, other_requirements, required_documents, mandatory_requirements,
-             deadline, position_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             deadline, position_type, extra_fields)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             request.form['campus'],
             request.form['title'],
@@ -455,15 +547,18 @@ def admin_new_job():
             json.dumps(required_docs),
             json.dumps(mandatory),
             request.form.get('deadline') or None,
-            clean_position_type(request.form.get('position_type'))
+            clean_position_type(request.form.get('position_type')),
+            json.dumps(parse_extra_fields(request.form))
         ))
         conn.commit()
         conn.close()
         flash('Job posting created successfully!')
         return redirect(url_for('admin_home'))
 
+    lists = load_document_lists()
     return render_template('admin/job_form.html', job=None, campuses=CAMPUSES, mandatory=[],
-                           presets=PRESETS)
+                           presets={'academic': lists['academic'], 'non_academic': lists['non_academic']},
+                           default_docs=lists['custom'], extra_fields=[])
 
 @app.route('/admin/job/<int:job_id>/edit', methods=['GET', 'POST'])
 def admin_edit_job(job_id):
@@ -492,7 +587,7 @@ def admin_edit_job(job_id):
             campus=?, title=?, description=?, skills=?,
             experience=?, education=?, other_requirements=?,
             required_documents=?, mandatory_requirements=?, is_active=?,
-            deadline=?, position_type=?
+            deadline=?, position_type=?, extra_fields=?
             WHERE id=?
         ''', (
             request.form['campus'],
@@ -507,6 +602,7 @@ def admin_edit_job(job_id):
             1 if 'is_active' in request.form else 0,
             request.form.get('deadline') or None,
             clean_position_type(request.form.get('position_type')),
+            json.dumps(parse_extra_fields(request.form)),
             job_id
         ))
         conn.commit()
@@ -516,8 +612,76 @@ def admin_edit_job(job_id):
 
     required_docs = json.loads(job['required_documents']) if job['required_documents'] else []
     mandatory = json.loads(job['mandatory_requirements']) if job['mandatory_requirements'] else []
+    lists = load_document_lists()
     return render_template('admin/job_form.html', job=job, required_docs=required_docs,
-                           mandatory=mandatory, campuses=CAMPUSES, presets=PRESETS)
+                           mandatory=mandatory, campuses=CAMPUSES,
+                           presets={'academic': lists['academic'], 'non_academic': lists['non_academic']},
+                           default_docs=lists['custom'], extra_fields=load_extra_fields(job))
+
+@app.route('/admin/document-types/add', methods=['POST'])
+def admin_document_type_add():
+    """Add a document to the shared lists, so it is available in every job posting."""
+    if 'admin' not in session:
+        return jsonify(ok=False, error='Please log in again.'), 401
+    data = request.get_json(silent=True) or {}
+    name = re.sub(r'\s+', ' ', str(data.get('name', '')).strip())
+    if not DOC_NAME_OK.match(name):
+        return jsonify(ok=False, error='Use 2 to 120 characters: letters, numbers, spaces and & ( ) / , . - only.'), 400
+
+    conn = get_db()
+    lists = load_document_lists(conn)
+    existing = next((n for names in lists.values() for n in names if n.lower() == name.lower()), None)
+    canonical = existing or name
+    added_to = 0
+    for key in LIST_KEYS:
+        if canonical.lower() in [n.lower() for n in lists[key]]:
+            continue
+        conn.execute('INSERT INTO document_lists (list_key, name, sort_order) VALUES '
+                     '(?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM document_lists WHERE list_key = ?)) '
+                     'ON CONFLICT DO NOTHING', (key, canonical, key))
+        added_to += 1
+    conn.commit()
+    conn.close()
+    if added_to:
+        log_action('document_type.add', 'document_type', canonical, f'added to {added_to} list(s)')
+    return jsonify(ok=True, name=canonical, already_existed=not added_to)
+
+
+@app.route('/admin/document-types/delete', methods=['POST'])
+def admin_document_type_delete():
+    """Delete a document from the shared lists and from every job posting that requires it.
+    Files applicants already uploaded stay on their records."""
+    if 'admin' not in session:
+        return jsonify(ok=False, error='Please log in again.'), 401
+    data = request.get_json(silent=True) or {}
+    name = re.sub(r'\s+', ' ', str(data.get('name', '')).strip())
+    if not name:
+        return jsonify(ok=False, error='No document was given.'), 400
+
+    conn = get_db()
+    lists = load_document_lists(conn)
+    for key, names in lists.items():
+        if [n for n in names if n.lower() != name.lower()] == [] and names:
+            conn.close()
+            return jsonify(ok=False, error='At least one document must stay in each list.'), 400
+
+    conn.execute('DELETE FROM document_lists WHERE LOWER(name) = LOWER(?)', (name,))
+    updated = 0
+    for j in conn.execute('SELECT id, required_documents FROM job_postings').fetchall():
+        try:
+            docs = json.loads(j['required_documents']) if j['required_documents'] else []
+        except (ValueError, TypeError):
+            continue
+        kept = [d for d in docs if str(d).lower() != name.lower()]
+        if len(kept) != len(docs):
+            conn.execute('UPDATE job_postings SET required_documents = ? WHERE id = ?',
+                         (json.dumps(kept), j['id']))
+            updated += 1
+    conn.commit()
+    conn.close()
+    log_action('document_type.delete', 'document_type', name, f'removed from the lists and from {updated} posting(s)')
+    return jsonify(ok=True, name=name, postings_updated=updated)
+
 
 @app.route('/admin/job/<int:job_id>/delete', methods=['POST'])
 def admin_delete_job(job_id):
@@ -707,10 +871,16 @@ def admin_applicant_detail(job_id, applicant_id):
     wanted = request.args.get('doc', default=0, type=int)
     selected = doc_list[wanted] if 0 <= wanted < len(doc_list) else (doc_list[0] if doc_list else None)
 
+    try:
+        extra_answers = json.loads(_col(applicant, 'extra_answers') or '[]')
+    except (ValueError, TypeError):
+        extra_answers = []
+
     return render_template('admin/applicant_detail.html',
                            job=job, a=applicant, docs=doc_list, selected=selected,
                            ai_note=ai_note, ai_error=ai_error, hr_when=hr_when,
-                           replaced_docs=replaced_docs, related_apps=related_apps)
+                           replaced_docs=replaced_docs, related_apps=related_apps,
+                           extra_answers=extra_answers)
 
 
 @app.route('/admin/job/<int:job_id>/applicant/<int:applicant_id>/document/<int:idx>')

@@ -57,6 +57,28 @@
     border-left: 3px solid var(--gold-dark);
     margin-bottom: 15px;
 }
+.doc-item .doc-name { flex: 1; }
+.doc-actions { display: flex; gap: 4px; }
+.doc-btn {
+    background: #fff; border: 1px solid #d9c27a; color: var(--plum); border-radius: 5px;
+    width: 30px; height: 28px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0;
+}
+.doc-btn:hover { background: #f3e6e6; border-color: var(--plum); }
+.doc-btn.danger { color: #a40000; }
+.chip-box {
+    display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid #ccc;
+    border-radius: 6px; background: #fff; min-height: 44px; align-items: center; cursor: text;
+}
+.chip {
+    display: inline-flex; align-items: center; background: #fff8d6; border: 1px solid #d9c27a;
+    color: var(--plum); border-radius: 14px; padding: 3px 4px 3px 10px; font-size: 13px;
+}
+.chip button { background: none; border: 0; cursor: pointer; color: var(--plum); font-size: 15px; line-height: 1; padding: 0 6px; }
+.chip-box input { flex: 1; min-width: 160px; width: auto; border: 0; outline: none; padding: 6px; margin: 0; background: transparent; }
+.field-hint { font-size: 12px; color: #888; margin-top: 4px; }
+.extra-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.extra-row input { flex: 1; margin: 0; }
+.extra-row select { width: 120px; margin: 0; }
 {% endblock %}
 
 {% block content %}
@@ -67,7 +89,7 @@
     </div>
 
     <div class="card">
-        <form method="POST">
+        <form method="POST" id="job-form">
             <div class="section-divider">Position Details</div>
 
             <label>Campus *</label>
@@ -115,9 +137,12 @@
             <div class="qual-row">
                 <div>
                     <label style="margin-top:0;">Required Skills</label>
-                    <input name="skills"
-                           placeholder="e.g. Microsoft Office, communication, filing"
-                           value="{{ job.skills if job else '' }}">
+                    <input type="hidden" name="skills" id="skills-value" value="{{ job.skills if job else '' }}">
+                    <div class="chip-box" id="skills-box">
+                        <input type="text" id="skill-input" maxlength="80"
+                               placeholder="Type a skill and press Enter" aria-label="Add a skill">
+                    </div>
+                    <div class="field-hint">Press Enter to add a skill, × to remove one. Paste a comma-separated list to add several.</div>
                 </div>
                 <div class="mandatory-box">
                     <label>Mandatory?</label>
@@ -184,43 +209,63 @@
 
             <div class="section-divider">Required Documents</div>
             <p style="font-size:13px; color:#666; margin-bottom:12px;">
-                Select the documents applicants must submit for this position.
+                Select the documents applicants must submit for this position. Use ↑ and ↓ to set the order
+                applicants see them in. Adding or deleting (✕) a document changes the shared list, so it applies to
+                every job posting.
             </p>
 
+            {% macro doc_row(doc, checked) %}
+            <div class="doc-item">
+                <input type="checkbox" name="required_documents" value="{{ doc }}" {% if checked %}checked{% endif %}>
+                <span class="doc-name">{{ doc }}</span>
+                <span class="doc-actions">
+                    <button type="button" class="doc-btn" data-act="up" title="Move up" aria-label="Move up: {{ doc }}">↑</button>
+                    <button type="button" class="doc-btn" data-act="down" title="Move down" aria-label="Move down: {{ doc }}">↓</button>
+                    <button type="button" class="doc-btn danger" data-act="delete" title="Delete from the list" aria-label="Delete from the list: {{ doc }}">✕</button>
+                </span>
+            </div>
+            {% endmacro %}
+
             <div class="doc-list">
-                {% set default_docs = ['Resume', 'Transcript of Records', 'Diploma',
-                'Certificate of Employment', 'Training Certificates',
-                'Government ID', 'PRC License', 'Medical Certificate',
-                'Birth Certificate', 'NBI Clearance'] %}
                 {% set selected_docs = required_docs if required_docs is defined else [] %}
                 {% set base_docs = presets[job.position_type] if (job and job.position_type and job.position_type in presets) else default_docs %}
-
-                {% for doc in base_docs %}
-                <div class="doc-item">
-                    <input type="checkbox" name="required_documents" value="{{ doc }}"
-                           {% if doc in selected_docs %}checked{% endif %}>
-                    <span>{{ doc }}</span>
-                </div>
-                {% endfor %}
-
-                {% for doc in selected_docs %}
-                    {% if doc not in base_docs %}
-                    <div class="doc-item">
-                        <input type="checkbox" name="required_documents"
-                               value="{{ doc }}" checked>
-                        <span>{{ doc }}</span>
-                    </div>
-                    {% endif %}
-                {% endfor %}
+                {# This posting's chosen documents first, in the order saved, then the other documents in the list #}
+                {% set ordered = [] %}
+                {% for doc in selected_docs %}{% if doc not in ordered %}{% set _ = ordered.append(doc) %}{% endif %}{% endfor %}
+                {% for doc in base_docs %}{% if doc not in ordered %}{% set _ = ordered.append(doc) %}{% endif %}{% endfor %}
+                {% for doc in ordered %}{{ doc_row(doc, doc in selected_docs) }}{% endfor %}
             </div>
 
             <div class="add-doc">
-                <input type="text" id="custom-doc"
-                       placeholder="Add a custom document requirement...">
+                <input type="text" id="custom-doc" maxlength="120"
+                       placeholder="Add a document to the list...">
                 <button type="button" class="btn btn-primary" onclick="addCustomDoc()">
                     + Add
                 </button>
             </div>
+
+            <div class="section-divider">Additional Applicant Information</div>
+            <p style="font-size:13px; color:#666; margin-bottom:12px;">
+                Applicants are always asked for their name, email and phone number. Add other questions here, for
+                example "Home address". Each one appears as a text box on the application form.
+            </p>
+
+            {% macro extra_row(label, required) %}
+            <div class="extra-row">
+                <input type="text" name="extra_label" maxlength="80" placeholder="e.g. Home address"
+                       value="{{ label }}" aria-label="Question for applicants">
+                <select name="extra_required" aria-label="Required or optional">
+                    <option value="0" {% if not required %}selected{% endif %}>Optional</option>
+                    <option value="1" {% if required %}selected{% endif %}>Required</option>
+                </select>
+                <button type="button" class="doc-btn danger" data-act="remove-extra" title="Remove this field" aria-label="Remove this field">✕</button>
+            </div>
+            {% endmacro %}
+
+            <div id="extra-list">
+                {% for f in (extra_fields or []) %}{{ extra_row(f.label, f.required) }}{% endfor %}
+            </div>
+            <button type="button" class="btn btn-primary" id="add-extra">+ Add field</button>
 
             {% if job %}
             <div style="margin-top:20px; padding:12px 15px; background:#fff8d6;
@@ -247,7 +292,25 @@
 
 <script>
 const PRESETS = {{ presets | tojson }};
+const docList = document.querySelector('.doc-list');
 let lastType = document.getElementById('position_type').value;
+
+/* ---------- required documents: order, add, delete ---------- */
+function postJSON(url, body) {
+    return fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+        .then(res => res.json().then(data => ({ok: res.ok && data.ok, data: data})));
+}
+
+function actionButton(act, symbol, title, name, danger) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'doc-btn' + (danger ? ' danger' : '');
+    b.dataset.act = act;
+    b.textContent = symbol;
+    b.title = title;
+    b.setAttribute('aria-label', title + ': ' + name);
+    return b;
+}
 
 function addDocItem(name, checked) {
     const div = document.createElement('div');
@@ -257,22 +320,80 @@ function addDocItem(name, checked) {
     box.name = 'required_documents';
     box.value = name;
     box.checked = checked;
-    box.style.width = 'auto';
-    box.style.accentColor = '#671E1E';
     const label = document.createElement('span');
+    label.className = 'doc-name';
     label.textContent = name;
+    const actions = document.createElement('span');
+    actions.className = 'doc-actions';
+    actions.appendChild(actionButton('up', '\u2191', 'Move up', name, false));
+    actions.appendChild(actionButton('down', '\u2193', 'Move down', name, false));
+    actions.appendChild(actionButton('delete', '\u2715', 'Delete from the list', name, true));
     div.appendChild(box);
     div.appendChild(label);
-    document.querySelector('.doc-list').appendChild(div);
+    div.appendChild(actions);
+    docList.appendChild(div);
 }
 
-function addCustomDoc() {
+function docNames() {
+    return Array.prototype.map.call(docList.querySelectorAll('input[type="checkbox"]'), b => b.value.toLowerCase());
+}
+
+async function deleteDoc(row) {
+    const name = row.querySelector('input[type="checkbox"]').value;
+    if (!confirm('Delete "' + name + '" from the document list?\n\nIt is removed from EVERY job posting and from the shared lists. Files applicants already uploaded stay on their records.')) {
+        return;
+    }
+    try {
+        const r = await postJSON('/admin/document-types/delete', {name: name});
+        if (!r.ok) { alert(r.data.error || 'Could not delete this document.'); return; }
+        row.remove();
+        Object.keys(PRESETS).forEach(function (k) {
+            PRESETS[k] = PRESETS[k].filter(n => n.toLowerCase() !== name.toLowerCase());
+        });
+    } catch (err) {
+        alert('Could not reach the server. Please try again.');
+    }
+}
+
+async function addCustomDoc() {
     const input = document.getElementById('custom-doc');
     const val = input.value.trim();
     if (!val) return;
-    addDocItem(val, true);
-    input.value = '';
+    try {
+        const r = await postJSON('/admin/document-types/add', {name: val});
+        if (!r.ok) { alert(r.data.error || 'Could not add this document.'); return; }
+        const name = r.data.name;
+        const existing = Array.prototype.find.call(docList.querySelectorAll('input[type="checkbox"]'),
+                                                   b => b.value.toLowerCase() === name.toLowerCase());
+        if (existing) { existing.checked = true; } else { addDocItem(name, true); }
+        Object.keys(PRESETS).forEach(function (k) {
+            if (PRESETS[k].map(n => n.toLowerCase()).indexOf(name.toLowerCase()) < 0) { PRESETS[k].push(name); }
+        });
+        input.value = '';
+    } catch (err) {
+        alert('Could not reach the server. Please try again.');
+    }
 }
+
+docList.addEventListener('click', function (e) {
+    const btn = e.target.closest('.doc-btn');
+    if (!btn) return;
+    const row = btn.closest('.doc-item');
+    const act = btn.dataset.act;
+    if (act === 'up') {
+        if (row.previousElementSibling) { docList.insertBefore(row, row.previousElementSibling); }
+        btn.focus();
+    } else if (act === 'down') {
+        if (row.nextElementSibling) { docList.insertBefore(row.nextElementSibling, row); }
+        btn.focus();
+    } else if (act === 'delete') {
+        deleteDoc(row);
+    }
+});
+
+document.getElementById('custom-doc').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addCustomDoc(); }
+});
 
 function applyPreset() {
     const select = document.getElementById('position_type');
@@ -283,8 +404,100 @@ function applyPreset() {
         return;
     }
     lastType = select.value;
-    document.querySelector('.doc-list').innerHTML = '';
+    docList.innerHTML = '';
     preset.forEach(name => addDocItem(name, true));
 }
+
+/* ---------- required skills as a list ---------- */
+(function () {
+    const hidden = document.getElementById('skills-value');
+    const box = document.getElementById('skills-box');
+    const input = document.getElementById('skill-input');
+    const form = document.getElementById('job-form');
+    let skills = [];
+
+    function sync() {
+        hidden.value = skills.join(', ');
+        Array.prototype.slice.call(box.querySelectorAll('.chip')).forEach(c => c.remove());
+        skills.forEach(function (skill, i) {
+            const chip = document.createElement('span');
+            chip.className = 'chip';
+            chip.appendChild(document.createTextNode(skill));
+            const x = document.createElement('button');
+            x.type = 'button';
+            x.textContent = '\u00d7';
+            x.title = 'Remove';
+            x.setAttribute('aria-label', 'Remove skill: ' + skill);
+            x.addEventListener('click', function () { skills.splice(i, 1); sync(); });
+            chip.appendChild(x);
+            box.insertBefore(chip, input);
+        });
+    }
+
+    function addSkills(text) {
+        String(text).split(/[,;\n]+/).map(s => s.trim()).filter(Boolean).forEach(function (s) {
+            if (!skills.some(x => x.toLowerCase() === s.toLowerCase())) { skills.push(s); }
+        });
+        sync();
+    }
+
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            if (input.value.trim()) { addSkills(input.value); input.value = ''; }
+        } else if (e.key === 'Backspace' && !input.value && skills.length) {
+            skills.pop(); sync();
+        }
+    });
+    input.addEventListener('paste', function (e) {
+        const text = (e.clipboardData || window.clipboardData).getData('text');
+        if (/[,;\n]/.test(text)) { e.preventDefault(); addSkills(text); }
+    });
+    box.addEventListener('click', function (e) { if (e.target === box) { input.focus(); } });
+    form.addEventListener('submit', function () {
+        if (input.value.trim()) { addSkills(input.value); input.value = ''; }
+        hidden.value = skills.join(', ');
+    });
+    addSkills(hidden.value);
+})();
+
+/* ---------- extra applicant information fields ---------- */
+(function () {
+    const list = document.getElementById('extra-list');
+    const addBtn = document.getElementById('add-extra');
+    const MAX = 10;
+
+    function refresh() { addBtn.disabled = list.querySelectorAll('.extra-row').length >= MAX; }
+
+    function addRow() {
+        if (list.querySelectorAll('.extra-row').length >= MAX) return;
+        const row = document.createElement('div');
+        row.className = 'extra-row';
+        const label = document.createElement('input');
+        label.type = 'text'; label.name = 'extra_label'; label.maxLength = 80;
+        label.placeholder = 'e.g. Home address';
+        label.setAttribute('aria-label', 'Question for applicants');
+        const sel = document.createElement('select');
+        sel.name = 'extra_required';
+        sel.setAttribute('aria-label', 'Required or optional');
+        [['0', 'Optional'], ['1', 'Required']].forEach(function (o) {
+            const opt = document.createElement('option');
+            opt.value = o[0]; opt.textContent = o[1];
+            sel.appendChild(opt);
+        });
+        const del = actionButton('remove-extra', '\u2715', 'Remove this field', '', true);
+        row.appendChild(label); row.appendChild(sel); row.appendChild(del);
+        list.appendChild(row);
+        label.focus();
+        refresh();
+    }
+
+    addBtn.addEventListener('click', addRow);
+    list.addEventListener('click', function (e) {
+        const btn = e.target.closest('.doc-btn');
+        if (btn && btn.dataset.act === 'remove-extra') { btn.closest('.extra-row').remove(); refresh(); }
+    });
+    refresh();
+})();
 </script>
 {% endblock %}

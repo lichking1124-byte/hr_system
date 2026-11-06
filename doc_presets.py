@@ -40,7 +40,25 @@ NON_ACADEMIC = [
     "Certificates of Training/Seminars",
 ]
 
+# The list shown for a "Custom" position (no position type chosen).
+DEFAULT_DOCS = [
+    "Resume",
+    "Transcript of Records",
+    "Diploma",
+    "Certificate of Employment",
+    "Training Certificates",
+    "Government ID",
+    "PRC License",
+    "Medical Certificate",
+    "Birth Certificate",
+    "NBI Clearance",
+]
+
 PRESETS = {'academic': ACADEMIC, 'non_academic': NON_ACADEMIC}
+
+# These three lists are only the STARTING lists. After the first start the live lists are kept in the
+# database (table document_lists), so HR can add, delete and reorder from the posting form.
+LIST_KEYS = ('custom', 'academic', 'non_academic')
 
 # Short guidance shown under each upload box, taken from HR's form.
 DOC_HINTS = {

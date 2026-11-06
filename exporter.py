@@ -70,6 +70,17 @@ def _education(value):
     return value or 'Not found in the diploma / transcript'
 
 
+def _extra(value):
+    """HR's extra questions and the applicant's answers, one per line."""
+    if not value:
+        return ''
+    try:
+        items = json.loads(value) if isinstance(value, str) else value
+        return '\n'.join(f"{i.get('label', '')}: {i.get('answer', '') or '-'}" for i in items)
+    except (ValueError, TypeError, AttributeError):
+        return ''
+
+
 def _status(a):
     return STATUS_LABELS.get(a.get('screening_result'), 'Under review')
 
@@ -88,6 +99,7 @@ def _columns(job):
         ('Full Name', 26, lambda a: a.get('full_name') or ''),
         ('Email', 30, lambda a: a.get('email') or ''),
         ('Phone', 16, lambda a: a.get('phone') or ''),
+        ('Additional Information', 36, lambda a: _extra(a.get('extra_answers'))),
         ('Position', 28, lambda a: title),
         ('Campus', 18, lambda a: campus),
         ('Course / Degree (from diploma)', 36, lambda a: _education(a.get('education_found'))),

@@ -42,6 +42,11 @@
         <label>Phone Number</label>
         <input name="phone" placeholder="e.g. 09123456789">
 
+        {% for f in (extra_fields or []) %}
+        <label for="extra_{{ loop.index0 }}">{{ f.label }}{% if f.required %} *{% endif %}</label>
+        <input id="extra_{{ loop.index0 }}" name="extra_{{ loop.index0 }}" maxlength="300" {% if f.required %}required{% endif %}>
+        {% endfor %}
+
         <div class="section-divider">Upload Required Documents</div>
         <p style="font-size:13px; color:#666; margin-bottom:15px;">
             Please upload PDF files only. Make sure all documents are clear and readable.

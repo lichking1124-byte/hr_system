@@ -91,6 +91,17 @@
             </div>
         </div>
 
+        {% if extra_answers %}
+        <div class="review-card">
+            <h3>Additional information</h3>
+            <div class="review-meta">
+                {% for item in extra_answers %}
+                <strong>{{ item.label }}:</strong> {{ item.answer or '—' }}<br>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         {% macro dup_item(r) %}
         <div class="dup-item">
             <a href="/admin/job/{{ r.job_id }}/applicant/{{ r.id }}">{{ r.name }}</a>

@@ -183,6 +183,17 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log (created_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_action_user ON audit_log (action, username, created_at)")
 
+    # The document lists HR picks from in the posting form (shared by every job posting).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS document_lists (
+            id SERIAL PRIMARY KEY,
+            list_key TEXT NOT NULL,
+            name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            UNIQUE (list_key, name)
+        )
+    ''')
+
     migrate_admin_accounts(cursor)
     conn.commit()
     conn.close()
