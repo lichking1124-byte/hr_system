@@ -10,10 +10,10 @@ from urllib.parse import urlparse
 from datetime import datetime, timedelta, date
 from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
-from screening_rules import decide, posting_terms, applicant_profile
+from screening_rules import decide, posting_terms, applicant_profile, EMPTY_VALUES
 from duplicates import PeopleIndex, same_email
 from ai_screener import advise_applicant, read_documents
-from exporter import export_qualified, export_all
+from exporter import export_qualified, export_all, export_applicant_list, export_applicants_by_position
 from ad_generator import generate_job_ad_image
 from cloudinary_uploader import upload_file
 from config import SECRET_KEY, CAMPUSES
@@ -75,7 +75,7 @@ ensure_position_type_column()
 
 def ensure_extra_field_columns():
     """HR-defined extra questions on a posting, and the applicants' answers to them."""
-    _add_missing_columns('job_postings', ['extra_fields'])
+    _add_missing_columns('job_postings', ['extra_fields', 'training'])
     _add_missing_columns('applicants', ['extra_answers'])
 
 
@@ -127,6 +127,49 @@ def load_document_lists(conn=None):
             conn.close()
     fallback = _fallback_document_lists()
     return {k: (out[k] or fallback[k]) for k in LIST_KEYS}
+
+
+# ---------------------------------------------------------------- qualification lists (per posting)
+QUAL_COLUMNS = {'skills': 'skills', 'education': 'education', 'other': 'other_requirements'}
+
+
+def split_items(text):
+    """'A, B (x, y); C' -> ['A', 'B (x, y)', 'C']. Splits at commas, semicolons and new lines,
+    but not inside brackets."""
+    items, buf, depth = [], [], 0
+    for ch in str(text or ''):
+        if ch == '(':
+            depth += 1
+        elif ch == ')' and depth:
+            depth -= 1
+        if depth == 0 and ch in ',;\n\r':
+            items.append(''.join(buf)); buf = []
+        else:
+            buf.append(ch)
+    items.append(''.join(buf))
+    out, seen = [], set()
+    for it in items:
+        it = re.sub(r'\s+', ' ', it).strip()[:120]
+        if it and it.lower() not in EMPTY_VALUES and it.lower() not in seen:
+            seen.add(it.lower()); out.append(it)
+    return out
+
+
+def qualification_items(job=None):
+    """The items already saved on a posting, for the form: {'skills': [...], 'education': [...], 'other': [...]}."""
+    return {kind: (split_items(job[column]) if job else []) for kind, column in QUAL_COLUMNS.items()}
+
+
+def qualification_value(form, kind, legacy_field):
+    """The posting's saved text for one qualification: its items, joined with commas."""
+    if 'qual_present' not in form:                 # an old cached form: use the old single text box
+        return form.get(legacy_field, '')
+    items, seen = [], set()
+    for raw in form.getlist(f'qual_{kind}'):
+        for it in split_items(raw):
+            if it.lower() not in seen:
+                seen.add(it.lower()); items.append(it)
+    return ', '.join(items)
 
 
 DOC_NAME_OK = re.compile(r"^\w[\w &()/,.'\-]{1,119}$")
@@ -534,21 +577,22 @@ def admin_new_job():
             INSERT INTO job_postings
             (campus, title, description, skills, experience,
              education, other_requirements, required_documents, mandatory_requirements,
-             deadline, position_type, extra_fields)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             deadline, position_type, extra_fields, training)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             request.form['campus'],
             request.form['title'],
             request.form['description'],
-            request.form['skills'],
+            qualification_value(request.form, 'skills', 'skills'),
             request.form['experience'],
-            request.form['education'],
-            request.form['other_requirements'],
+            qualification_value(request.form, 'education', 'education'),
+            qualification_value(request.form, 'other', 'other_requirements'),
             json.dumps(required_docs),
             json.dumps(mandatory),
             request.form.get('deadline') or None,
             clean_position_type(request.form.get('position_type')),
-            json.dumps(parse_extra_fields(request.form))
+            json.dumps(parse_extra_fields(request.form)),
+            (request.form.get('training') or '').strip()[:500]
         ))
         conn.commit()
         conn.close()
@@ -558,7 +602,8 @@ def admin_new_job():
     lists = load_document_lists()
     return render_template('admin/job_form.html', job=None, campuses=CAMPUSES, mandatory=[],
                            presets={'academic': lists['academic'], 'non_academic': lists['non_academic']},
-                           default_docs=lists['custom'], extra_fields=[])
+                           default_docs=lists['custom'], extra_fields=[],
+                           qual_items=qualification_items())
 
 @app.route('/admin/job/<int:job_id>/edit', methods=['GET', 'POST'])
 def admin_edit_job(job_id):
@@ -587,22 +632,23 @@ def admin_edit_job(job_id):
             campus=?, title=?, description=?, skills=?,
             experience=?, education=?, other_requirements=?,
             required_documents=?, mandatory_requirements=?, is_active=?,
-            deadline=?, position_type=?, extra_fields=?
+            deadline=?, position_type=?, extra_fields=?, training=?
             WHERE id=?
         ''', (
             request.form['campus'],
             request.form['title'],
             request.form['description'],
-            request.form['skills'],
+            qualification_value(request.form, 'skills', 'skills'),
             request.form['experience'],
-            request.form['education'],
-            request.form['other_requirements'],
+            qualification_value(request.form, 'education', 'education'),
+            qualification_value(request.form, 'other', 'other_requirements'),
             json.dumps(required_docs),
             json.dumps(mandatory),
             1 if 'is_active' in request.form else 0,
             request.form.get('deadline') or None,
             clean_position_type(request.form.get('position_type')),
             json.dumps(parse_extra_fields(request.form)),
+            (request.form.get('training') or '').strip()[:500],
             job_id
         ))
         conn.commit()
@@ -616,7 +662,8 @@ def admin_edit_job(job_id):
     return render_template('admin/job_form.html', job=job, required_docs=required_docs,
                            mandatory=mandatory, campuses=CAMPUSES,
                            presets={'academic': lists['academic'], 'non_academic': lists['non_academic']},
-                           default_docs=lists['custom'], extra_fields=load_extra_fields(job))
+                           default_docs=lists['custom'], extra_fields=load_extra_fields(job),
+                           qual_items=qualification_items(job))
 
 @app.route('/admin/document-types/add', methods=['POST'])
 def admin_document_type_add():
@@ -1454,6 +1501,66 @@ def download_all(job_id):
 
     return send_file(buffer, as_attachment=True, download_name="all_applicants.xlsx",
                       mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+def _file_slug(text):
+    return re.sub(r'[^A-Za-z0-9]+', '_', str(text or 'positions')).strip('_')[:40] or 'positions'
+
+
+@app.route('/admin/job/<int:job_id>/download/applicants')
+def download_applicant_list(job_id):
+    """Excel list of ALL applicants for one position, including those not screened yet."""
+    if 'admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    conn = get_db()
+    job = conn.execute('SELECT * FROM job_postings WHERE id = ?', (job_id,)).fetchone()
+    if not job:
+        conn.close()
+        return "Job not found", 404
+    applicants = conn.execute(
+        'SELECT * FROM applicants WHERE job_id = ? ORDER BY applied_at, id', (job_id,)
+    ).fetchall()
+    conn.close()
+
+    buffer = export_applicant_list([dict(a) for a in applicants], dict(job))
+    if not buffer:
+        flash('There are no applicants for this position yet.')
+        return redirect(url_for('admin_applicants', job_id=job_id))
+
+    log_action('export.applicants', 'job', job_id, f'list of all applicants ({len(applicants)} row(s))')
+    return send_file(buffer, as_attachment=True,
+                     download_name=f"applicants_{_file_slug(job['title'])}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route('/admin/download/applicants-by-position')
+def download_applicants_by_position():
+    """One Excel workbook: a sheet for each open position, listing all of its applicants."""
+    if 'admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    conn = get_db()
+    jobs = conn.execute(
+        'SELECT * FROM job_postings WHERE is_active = 1 AND archived_at IS NULL ORDER BY campus, title'
+    ).fetchall()
+    groups, total = [], 0
+    for job in jobs:
+        apps = conn.execute(
+            'SELECT * FROM applicants WHERE job_id = ? ORDER BY applied_at, id', (job['id'],)
+        ).fetchall()
+        total += len(apps)
+        groups.append((dict(job), [dict(a) for a in apps]))
+    conn.close()
+
+    buffer = export_applicants_by_position(groups)
+    if not buffer:
+        flash('There are no applicants for the open positions yet.')
+        return redirect(url_for('admin_home'))
+
+    log_action('export.applicants', 'job', 'all-open', f'{len(groups)} open position(s), {total} applicant row(s)')
+    return send_file(buffer, as_attachment=True, download_name="applicants_all_open_positions.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

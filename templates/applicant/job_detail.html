@@ -51,25 +51,31 @@
 </div>
 
 <div class="card">
-    <div class="section-title">Job Requirements</div>
+    <div class="section-title">Qualifications</div>
     <div class="spec-item">
-        <span class="spec-label">Required Skills:</span>
-        <span>{{ job.skills }}</span>
+        <span class="spec-label">Education:</span>
+        <span>{{ job.education }}</span>
     </div>
     <div class="spec-item">
         <span class="spec-label">Experience:</span>
         <span>{{ job.experience }}</span>
     </div>
+    {% if job.training %}
     <div class="spec-item">
-        <span class="spec-label">Education:</span>
-        <span>{{ job.education }}</span>
+        <span class="spec-label">Training:</span>
+        <span>{{ job.training }}</span>
     </div>
+    {% endif %}
     {% if job.other_requirements %}
     <div class="spec-item">
-        <span class="spec-label">Other Requirements:</span>
+        <span class="spec-label">Eligibility:</span>
         <span>{{ job.other_requirements }}</span>
     </div>
     {% endif %}
+    <div class="spec-item">
+        <span class="spec-label">Skills:</span>
+        <span>{{ job.skills }}</span>
+    </div>
 </div>
 
 <div class="card">

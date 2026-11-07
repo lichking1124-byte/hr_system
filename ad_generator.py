@@ -160,8 +160,9 @@ def _draw_qualifications(draw, job):
     rows = [
         ("Education", job.get("education")),
         ("Experience", job.get("experience") or "None required"),
-        ("Training", job.get("skills") or "None required"),
+        ("Training", job.get("training") or "None required"),
         ("Eligibility", job.get("other_requirements")),
+        ("Skills", job.get("skills")),
     ]
     rows = [(l, v) for l, v in rows if v]
     for size in range(30, 17, -1):

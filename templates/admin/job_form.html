@@ -136,45 +136,7 @@
 
             <div class="qual-row">
                 <div>
-                    <label style="margin-top:0;">Required Skills</label>
-                    <input type="hidden" name="skills" id="skills-value" value="{{ job.skills if job else '' }}">
-                    <div class="chip-box" id="skills-box">
-                        <input type="text" id="skill-input" maxlength="80"
-                               placeholder="Type a skill and press Enter" aria-label="Add a skill">
-                    </div>
-                    <div class="field-hint">Press Enter to add a skill, × to remove one. Paste a comma-separated list to add several.</div>
-                </div>
-                <div class="mandatory-box">
-                    <label>Mandatory?</label>
-                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
-                        <input type="checkbox" name="mandatory_skills"
-                               style="width:auto; accent-color:var(--plum);"
-                               {% if mandatory and 'skills' in mandatory %}checked{% endif %}>
-                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="qual-row">
-                <div>
-                    <label style="margin-top:0;">Minimum Experience</label>
-                    <input name="experience" placeholder="e.g. 2 years in admin role"
-                           value="{{ job.experience if job else '' }}">
-                </div>
-                <div class="mandatory-box">
-                    <label>Mandatory?</label>
-                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
-                        <input type="checkbox" name="mandatory_experience"
-                               style="width:auto; accent-color:var(--plum);"
-                               {% if mandatory and 'experience' in mandatory %}checked{% endif %}>
-                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="qual-row">
-                <div>
-                    <label style="margin-top:0;">Education Requirement</label>
+                    <label style="margin-top:0;">Education</label>
                     <input name="education" placeholder="e.g. Bachelor's degree in any field"
                            value="{{ job.education if job else '' }}">
                 </div>
@@ -191,7 +153,33 @@
 
             <div class="qual-row">
                 <div>
-                    <label style="margin-top:0;">Other Requirements / Eligibility</label>
+                    <label style="margin-top:0;">Experience</label>
+                    <input name="experience" placeholder="e.g. At least 6 months in an IT support role"
+                           value="{{ job.experience if job else '' }}">
+                </div>
+                <div class="mandatory-box">
+                    <label>Mandatory?</label>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
+                        <input type="checkbox" name="mandatory_experience"
+                               style="width:auto; accent-color:var(--plum);"
+                               {% if mandatory and 'experience' in mandatory %}checked{% endif %}>
+                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="qual-row">
+                <div>
+                    <label style="margin-top:0;">Training</label>
+                    <input name="training" maxlength="500" placeholder="e.g. 8 hours of relevant training"
+                           value="{{ job.training if job and job.training else '' }}">
+                    <div class="field-hint">Shown on the posting and the job ad. The screening does not check it.</div>
+                </div>
+            </div>
+
+            <div class="qual-row">
+                <div>
+                    <label style="margin-top:0;">Eligibility</label>
                     <input name="other_requirements"
                            placeholder="e.g. PRC License, CS Professional, willing to work on-site"
                            value="{{ job.other_requirements if job else '' }}">
@@ -202,6 +190,27 @@
                         <input type="checkbox" name="mandatory_other"
                                style="width:auto; accent-color:var(--plum);"
                                {% if mandatory and 'other' in mandatory %}checked{% endif %}>
+                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="qual-row">
+                <div>
+                    <label style="margin-top:0;">Skills</label>
+                    <input type="hidden" name="skills" id="skills-value" value="{{ job.skills if job else '' }}">
+                    <div class="chip-box" id="skills-box">
+                        <input type="text" id="skill-input" maxlength="80"
+                               placeholder="Type a skill and press Enter" aria-label="Add a skill">
+                    </div>
+                    <div class="field-hint">Press Enter to add a skill, × to remove one. Paste a comma-separated list to add several.</div>
+                </div>
+                <div class="mandatory-box">
+                    <label>Mandatory?</label>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
+                        <input type="checkbox" name="mandatory_skills"
+                               style="width:auto; accent-color:var(--plum);"
+                               {% if mandatory and 'skills' in mandatory %}checked{% endif %}>
                         <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
                     </div>
                 </div>
