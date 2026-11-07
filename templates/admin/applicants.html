@@ -119,6 +119,10 @@
         🔄 Re-screen All
     </a>
     {% endif %}
+    <a href="/admin/job/{{ job.id }}/download/applicants" class="btn btn-gold"
+       title="Excel list of every applicant for this position, including those not screened yet">
+        📋 Generate List of All Applicants
+    </a>
     <a href="/admin/job/{{ job.id }}/download/qualified" class="btn btn-gold">
         ⬇ Qualified List
     </a>
@@ -127,6 +131,10 @@
     </a>
     <a href="/admin/job/{{ job.id }}/download/all-documents" class="btn btn-success">
         📦 All Documents (ZIP)
+    </a>
+    <a href="/admin/download/applicants-by-position" class="btn btn-warning"
+       title="One Excel file with a sheet for each open position">
+        📋 Applicants of All Open Positions
     </a>
     <a href="/admin" class="btn btn-primary" style="margin-left:auto;">
         ← Dashboard

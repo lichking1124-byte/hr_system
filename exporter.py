@@ -1,4 +1,5 @@
 import json
+import re
 from io import BytesIO
 from datetime import timedelta
 
@@ -16,6 +17,7 @@ BODY_FONT = Font(name='Calibri', size=10)
 THIN = Side(style='thin', color='D9D9D9')
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 STATUS_FILLS = {
+    'Not screened yet': PatternFill('solid', start_color='E7E6E6'),
     'Qualified': PatternFill('solid', start_color='E2F0D9'),
     'Disqualified': PatternFill('solid', start_color='F8D7DA'),
     'Under review': PatternFill('solid', start_color='FFF2CC'),
@@ -81,12 +83,21 @@ def _extra(value):
         return ''
 
 
+def _screened(a):
+    """Rows from the exports of screened applicants carry no flag; the full list does."""
+    return bool(a.get('is_screened', 1))
+
+
 def _status(a):
+    if not _screened(a):
+        return 'Not screened yet'
     return STATUS_LABELS.get(a.get('screening_result'), 'Under review')
 
 
 def _checklist_result(a):
     """What the fixed checklist said, even if HR has since decided differently."""
+    if not _screened(a):
+        return ''
     return STATUS_LABELS.get(a.get('system_result') or a.get('screening_result'), 'Under review')
 
 
@@ -102,26 +113,24 @@ def _columns(job):
         ('Additional Information', 36, lambda a: _extra(a.get('extra_answers'))),
         ('Position', 28, lambda a: title),
         ('Campus', 18, lambda a: campus),
-        ('Course / Degree (from diploma)', 36, lambda a: _education(a.get('education_found'))),
-        ('Work Experience (dated)', 20, lambda a: _experience(a.get('experience_months'))),
+        ('Course / Degree (from diploma)', 36,
+         lambda a: _education(a.get('education_found')) if _screened(a) else ''),
+        ('Work Experience (dated)', 20,
+         lambda a: _experience(a.get('experience_months')) if _screened(a) else ''),
         ('Status', 14, _status),
         ('Checklist Result', 16, _checklist_result),
-        ('HR Decision', 14, lambda a: HR_LABELS.get(a.get('hr_decision'), '')),
+        ('HR Decision', 14, lambda a: HR_LABELS.get(a.get('hr_decision'), '') if _screened(a) else ''),
         ('HR Decided By', 18, lambda a: a.get('hr_decision_by') or ''),
         ('HR Reason', 40, lambda a: a.get('hr_decision_reason') or ''),
         ('Applied At', 21, lambda a: _fmt_timestamp(a.get('applied_at'))),
-        ('Reason', 60, lambda a: a.get('screening_reason') or ''),
-        ('Verified', 60, lambda a: _lines(a.get('screening_strengths'))),
-        ('Not Verified / For Review', 60, lambda a: _lines(a.get('screening_weaknesses'))),
+        ('Reason', 60, lambda a: (a.get('screening_reason') or '') if _screened(a) else 'Not screened yet.'),
+        ('Verified', 60, lambda a: _lines(a.get('screening_strengths')) if _screened(a) else ''),
+        ('Not Verified / For Review', 60, lambda a: _lines(a.get('screening_weaknesses')) if _screened(a) else ''),
     ]
 
 
-def _build(applicants, job, sheet_title):
+def _fill_sheet(ws, applicants, job):
     columns = _columns(job)
-    wb = Workbook()
-    ws = wb.active
-    ws.title = sheet_title
-
     for col, (header, width, _) in enumerate(columns, start=1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = HEADER_FONT
@@ -153,10 +162,29 @@ def _build(applicants, job, sheet_title):
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
+
+def _build(applicants, job, sheet_title):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_title
+    _fill_sheet(ws, applicants, job)
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
     return buffer
+
+
+def _sheet_name(text, used):
+    """Excel sheet names: at most 31 characters, none of  [ ] : * ? / \\, and unique in the workbook."""
+    base = re.sub(r'[\[\]:*?/\\]', ' ', str(text or 'Position'))
+    base = re.sub(r'\s+', ' ', base).strip()[:31] or 'Position'
+    name, n = base, 2
+    while name.lower() in used:
+        suffix = f' ({n})'
+        name = base[:31 - len(suffix)] + suffix
+        n += 1
+    used.add(name.lower())
+    return name
 
 
 def export_qualified(applicants, job=None):
@@ -169,3 +197,31 @@ def export_all(applicants, job=None):
     if not applicants:
         return None
     return _build(applicants, job, 'All applicants')
+
+
+def export_applicant_list(applicants, job=None):
+    """Every applicant of one position, screened or not."""
+    if not applicants:
+        return None
+    return _build(applicants, job, 'All applicants')
+
+
+def export_applicants_by_position(groups):
+    """One workbook, one sheet per open position. groups = [(job, [applicants]), ...]"""
+    if not groups or not any(apps for _, apps in groups):
+        return None
+    wb = Workbook()
+    used = set()
+    first = True
+    for job, apps in groups:
+        ws = wb.active if first else wb.create_sheet()
+        first = False
+        title = f"{job.get('title') or 'Position'}"
+        if job.get('campus'):
+            title = f"{title} - {job['campus']}"
+        ws.title = _sheet_name(title, used)
+        _fill_sheet(ws, apps, job)
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer
