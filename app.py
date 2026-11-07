@@ -130,7 +130,7 @@ def load_document_lists(conn=None):
 
 
 # ---------------------------------------------------------------- qualification lists (per posting)
-QUAL_COLUMNS = {'skills': 'skills', 'education': 'education', 'other': 'other_requirements'}
+QUAL_COLUMNS = {'skills': 'skills', 'education': 'education', 'training': 'training', 'other': 'other_requirements'}
 
 
 def split_items(text):
@@ -592,7 +592,7 @@ def admin_new_job():
             request.form.get('deadline') or None,
             clean_position_type(request.form.get('position_type')),
             json.dumps(parse_extra_fields(request.form)),
-            (request.form.get('training') or '').strip()[:500]
+            qualification_value(request.form, 'training', 'training').strip()[:500]
         ))
         conn.commit()
         conn.close()
@@ -648,7 +648,7 @@ def admin_edit_job(job_id):
             request.form.get('deadline') or None,
             clean_position_type(request.form.get('position_type')),
             json.dumps(parse_extra_fields(request.form)),
-            (request.form.get('training') or '').strip()[:500],
+            qualification_value(request.form, 'training', 'training').strip()[:500],
             job_id
         ))
         conn.commit()

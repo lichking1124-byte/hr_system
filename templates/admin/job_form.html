@@ -57,6 +57,7 @@
     border-left: 3px solid var(--gold-dark);
     margin-bottom: 15px;
 }
+.qual-list { margin-top: 10px; }
 .doc-item .doc-name { flex: 1; }
 .doc-actions { display: flex; gap: 4px; }
 .doc-btn {
@@ -82,6 +83,27 @@
 {% endblock %}
 
 {% block content %}
+{% macro qual_row(kind, name) %}
+<div class="doc-item">
+    <input type="hidden" name="qual_{{ kind }}" value="{{ name }}">
+    <span class="doc-name">{{ name }}</span>
+    <span class="doc-actions">
+        <button type="button" class="doc-btn danger" data-act="remove" title="Remove" aria-label="Remove: {{ name }}">✕</button>
+    </span>
+</div>
+{% endmacro %}
+
+{% macro qual_list(kind, items, placeholder, hint) %}
+<div class="qual-list" data-kind="{{ kind }}">
+    {% for name in items %}{{ qual_row(kind, name) }}{% endfor %}
+</div>
+<div class="add-doc">
+    <input type="text" class="qual-add-input" data-kind="{{ kind }}" maxlength="400" placeholder="{{ placeholder }}" aria-label="{{ placeholder }}">
+    <button type="button" class="btn btn-primary qual-add-btn" data-kind="{{ kind }}">+ Add</button>
+</div>
+<div class="field-hint">{{ hint }}</div>
+{% endmacro %}
+
 <div style="max-width:700px; margin:0 auto;">
     <div class="page-header">
         <h1>{% if job %}Edit Job Posting{% else %}New Job Posting{% endif %}</h1>
@@ -90,6 +112,7 @@
 
     <div class="card">
         <form method="POST" id="job-form">
+            <input type="hidden" name="qual_present" value="1">
             <div class="section-divider">Position Details</div>
 
             <label>Campus *</label>
@@ -137,8 +160,8 @@
             <div class="qual-row">
                 <div>
                     <label style="margin-top:0;">Education</label>
-                    <input name="education" placeholder="e.g. Bachelor's degree in any field"
-                           value="{{ job.education if job else '' }}">
+                    {{ qual_list('education', qual_items['education'], 'Add an accepted degree...',
+                                 'An applicant who matches any one of these degrees passes the education check.') }}
                 </div>
                 <div class="mandatory-box">
                     <label>Mandatory?</label>
@@ -171,18 +194,16 @@
             <div class="qual-row">
                 <div>
                     <label style="margin-top:0;">Training</label>
-                    <input name="training" maxlength="500" placeholder="e.g. 8 hours of relevant training"
-                           value="{{ job.training if job and job.training else '' }}">
-                    <div class="field-hint">Shown on the posting and the job ad. The screening does not check it.</div>
+                    {{ qual_list('training', qual_items['training'], 'Add a training...',
+                                 'Shown on the posting and the job ad. The screening does not check it.') }}
                 </div>
             </div>
 
             <div class="qual-row">
                 <div>
                     <label style="margin-top:0;">Eligibility</label>
-                    <input name="other_requirements"
-                           placeholder="e.g. PRC License, CS Professional, willing to work on-site"
-                           value="{{ job.other_requirements if job else '' }}">
+                    {{ qual_list('other', qual_items['other'], 'Add a requirement...',
+                                 'Each item, such as a license or eligibility, is looked for in the documents.') }}
                 </div>
                 <div class="mandatory-box">
                     <label>Mandatory?</label>
@@ -198,12 +219,8 @@
             <div class="qual-row">
                 <div>
                     <label style="margin-top:0;">Skills</label>
-                    <input type="hidden" name="skills" id="skills-value" value="{{ job.skills if job else '' }}">
-                    <div class="chip-box" id="skills-box">
-                        <input type="text" id="skill-input" maxlength="80"
-                               placeholder="Type a skill and press Enter" aria-label="Add a skill">
-                    </div>
-                    <div class="field-hint">Press Enter to add a skill, × to remove one. Paste a comma-separated list to add several.</div>
+                    {{ qual_list('skills', qual_items['skills'], 'Add a skill...',
+                                 'Each skill is looked for in the applicant\'s documents. Paste a comma-separated list to add several.') }}
                 </div>
                 <div class="mandatory-box">
                     <label>Mandatory?</label>
@@ -417,57 +434,74 @@ function applyPreset() {
     preset.forEach(name => addDocItem(name, true));
 }
 
-/* ---------- required skills as a list ---------- */
+/* ---------- qualification lists (skills, education, other requirements): separate for each posting ---------- */
 (function () {
-    const hidden = document.getElementById('skills-value');
-    const box = document.getElementById('skills-box');
-    const input = document.getElementById('skill-input');
-    const form = document.getElementById('job-form');
-    let skills = [];
-
-    function sync() {
-        hidden.value = skills.join(', ');
-        Array.prototype.slice.call(box.querySelectorAll('.chip')).forEach(c => c.remove());
-        skills.forEach(function (skill, i) {
-            const chip = document.createElement('span');
-            chip.className = 'chip';
-            chip.appendChild(document.createTextNode(skill));
-            const x = document.createElement('button');
-            x.type = 'button';
-            x.textContent = '\u00d7';
-            x.title = 'Remove';
-            x.setAttribute('aria-label', 'Remove skill: ' + skill);
-            x.addEventListener('click', function () { skills.splice(i, 1); sync(); });
-            chip.appendChild(x);
-            box.insertBefore(chip, input);
-        });
+    /* 'A, B (x, y); C' -> ['A', 'B (x, y)', 'C']  (commas inside brackets do not split) */
+    function splitItems(text) {
+        const items = []; let buf = ''; let depth = 0;
+        for (const ch of String(text)) {
+            if (ch === '(') { depth++; } else if (ch === ')' && depth) { depth--; }
+            if (depth === 0 && (ch === ',' || ch === ';' || ch === '\n' || ch === '\r')) { items.push(buf); buf = ''; }
+            else { buf += ch; }
+        }
+        items.push(buf);
+        return items.map(function (s) { return s.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
     }
 
-    function addSkills(text) {
-        String(text).split(/[,;\n]+/).map(s => s.trim()).filter(Boolean).forEach(function (s) {
-            if (!skills.some(x => x.toLowerCase() === s.toLowerCase())) { skills.push(s); }
-        });
-        sync();
+    function addRow(list, kind, name) {
+        const div = document.createElement('div');
+        div.className = 'doc-item';
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'qual_' + kind;
+        hidden.value = name;
+        const label = document.createElement('span');
+        label.className = 'doc-name';
+        label.textContent = name;
+        const actions = document.createElement('span');
+        actions.className = 'doc-actions';
+        actions.appendChild(actionButton('remove', '\u2715', 'Remove', name, true));
+        div.appendChild(hidden);
+        div.appendChild(label);
+        div.appendChild(actions);
+        list.appendChild(div);
     }
 
-    input.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.key === ',') {
+    Array.prototype.forEach.call(document.querySelectorAll('.qual-list'), function (list) {
+        const kind = list.dataset.kind;
+        const input = document.querySelector('.qual-add-input[data-kind="' + kind + '"]');
+        const addBtn = document.querySelector('.qual-add-btn[data-kind="' + kind + '"]');
+
+        function add() {
+            const have = Array.prototype.map.call(list.querySelectorAll('input[type="hidden"]'), function (h) { return h.value.toLowerCase(); });
+            splitItems(input.value).forEach(function (name) {
+                name = name.slice(0, 120);
+                if (have.indexOf(name.toLowerCase()) < 0) { addRow(list, kind, name); have.push(name.toLowerCase()); }
+            });
+            input.value = '';
+            input.focus();
+        }
+
+        list.addEventListener('click', function (e) {
+            const btn = e.target.closest('.doc-btn');
+            if (btn && btn.dataset.act === 'remove') { btn.closest('.doc-item').remove(); }
+        });
+        addBtn.addEventListener('click', add);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); add(); }
+        });
+    });
+
+    /* a typed item that was never added would be lost, so stop the save and say so */
+    document.getElementById('job-form').addEventListener('submit', function (e) {
+        const pending = Array.prototype.find.call(document.querySelectorAll('.qual-add-input, #custom-doc'),
+                                                  function (i) { return i.value.trim(); });
+        if (pending) {
             e.preventDefault();
-            if (input.value.trim()) { addSkills(input.value); input.value = ''; }
-        } else if (e.key === 'Backspace' && !input.value && skills.length) {
-            skills.pop(); sync();
+            alert('You typed "' + pending.value.trim() + '" but have not pressed + Add yet. Press + Add (or clear the box), then save.');
+            pending.focus();
         }
     });
-    input.addEventListener('paste', function (e) {
-        const text = (e.clipboardData || window.clipboardData).getData('text');
-        if (/[,;\n]/.test(text)) { e.preventDefault(); addSkills(text); }
-    });
-    box.addEventListener('click', function (e) { if (e.target === box) { input.focus(); } });
-    form.addEventListener('submit', function () {
-        if (input.value.trim()) { addSkills(input.value); input.value = ''; }
-        hidden.value = skills.join(', ');
-    });
-    addSkills(hidden.value);
 })();
 
 /* ---------- extra applicant information fields ---------- */
