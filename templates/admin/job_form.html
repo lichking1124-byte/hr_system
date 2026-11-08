@@ -60,7 +60,10 @@
 .cq-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
 .cq-row input { margin: 0; }
 .cq-row input[name="cq_label"] { width: 34%; font-weight: bold; }
-.cq-row input[name="cq_value"] { flex: 1; }
+.cq-row input[name="cq_value"] { flex: 1 1 200px; }
+.cq-row { flex-wrap: wrap; }
+.cq-mand { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: bold; color: var(--plum); white-space: nowrap; }
+.cq-mand input { width: auto; margin: 0; accent-color: var(--plum); }
 .doc-item .doc-name { flex: 1; }
 .doc-actions { display: flex; gap: 4px; }
 .doc-btn {
@@ -220,22 +223,28 @@
                 </div>
             </div>
 
-            {% macro cq_row(label, value) %}
+            {% macro cq_row(label, value, mandatory) %}
             <div class="cq-row">
                 <input type="text" name="cq_label" maxlength="60" value="{{ label }}" placeholder="Qualification" aria-label="Qualification name">
                 <input type="text" name="cq_value" maxlength="500" value="{{ value }}" placeholder="Requirement" aria-label="Requirement">
+                <label class="cq-mand"><input type="checkbox" class="cq-mand-box" {% if mandatory %}checked{% endif %}> Mandatory</label>
+                <input type="hidden" name="cq_mandatory" value="{{ '1' if mandatory else '0' }}">
                 <button type="button" class="doc-btn danger" data-act="remove-cq" title="Remove this qualification" aria-label="Remove this qualification">✕</button>
             </div>
             {% endmacro %}
 
             <div id="custom-qual-list">
-                {% for q in (custom_quals or []) %}{{ cq_row(q.label, q.value) }}{% endfor %}
+                {% for q in (custom_quals or []) %}{{ cq_row(q.label, q.value, q.mandatory) }}{% endfor %}
             </div>
             <div class="add-doc">
                 <input type="text" id="custom-qual" maxlength="60" placeholder="Add a qualification...">
                 <button type="button" class="btn btn-primary" id="add-custom-qual">+ Add</button>
             </div>
-            <div class="field-hint">Shown to applicants on the posting and on the job ad. The screening does not check these.</div>
+            <div class="field-hint">
+                Shown to applicants on the posting and on the job ad. The screening looks for each requirement in the
+                applicant's documents, so word it the way it would appear there. Check <strong>Mandatory</strong> to
+                disqualify applicants whose readable documents clearly do not show it.
+            </div>
 
             <div class="section-divider">Required Documents</div>
             <p style="font-size:13px; color:#666; margin-bottom:12px;">
@@ -549,8 +558,17 @@ function applyPreset() {
         v.type = 'text'; v.name = 'cq_value'; v.maxLength = 500;
         v.placeholder = 'Requirement';
         v.setAttribute('aria-label', 'Requirement');
+        const mandLabel = document.createElement('label');
+        mandLabel.className = 'cq-mand';
+        const mandBox = document.createElement('input');
+        mandBox.type = 'checkbox';
+        mandBox.className = 'cq-mand-box';
+        mandLabel.appendChild(mandBox);
+        mandLabel.appendChild(document.createTextNode(' Mandatory'));
+        const mandHidden = document.createElement('input');
+        mandHidden.type = 'hidden'; mandHidden.name = 'cq_mandatory'; mandHidden.value = '0';
         const del = actionButton('remove-cq', '\u2715', 'Remove this qualification', '', true);
-        row.appendChild(l); row.appendChild(v); row.appendChild(del);
+        row.appendChild(l); row.appendChild(v); row.appendChild(mandLabel); row.appendChild(mandHidden); row.appendChild(del);
         list.appendChild(row);
         v.focus();
     }
@@ -569,6 +587,12 @@ function applyPreset() {
     list.addEventListener('click', function (e) {
         const btn = e.target.closest('.doc-btn');
         if (btn && btn.dataset.act === 'remove-cq') { btn.closest('.cq-row').remove(); }
+    });
+    /* the checkbox is what HR sees; the hidden field is what is saved, so the rows always line up */
+    list.addEventListener('change', function (e) {
+        if (e.target.classList.contains('cq-mand-box')) {
+            e.target.closest('.cq-row').querySelector('input[name="cq_mandatory"]').value = e.target.checked ? '1' : '0';
+        }
     });
 
     /* a typed name that was never added would be lost, so stop the save and say so */

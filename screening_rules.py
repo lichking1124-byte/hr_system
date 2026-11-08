@@ -615,14 +615,30 @@ def find_evidence(quote, documents_text):
     return None
 
 
+def custom_requirements(job_specs):
+    """Extra qualifications HR added to the posting: [{'label', 'value', 'mandatory'}]."""
+    out = []
+    for q in job_specs.get('custom_qualifications') or []:
+        if not isinstance(q, dict):
+            continue
+        label = str(q.get('label') or '').strip()
+        value = str(q.get('value') or '').strip()
+        if label and value and value.lower() not in EMPTY_VALUES:
+            out.append({'label': label, 'value': value, 'mandatory': bool(q.get('mandatory'))})
+    return out
+
+
 def posting_terms(job_specs):
-    """The skill / other terms of the posting, exactly as the checklist splits them.
+    """The skill / other / extra-qualification terms of the posting, exactly as the checklist splits them.
     These are what the AI is asked to look for."""
     out = []
+    texts = []
     for key in ('skills', 'other_requirements'):
         listed, text = _listed(job_specs, key)
-        if not listed:
-            continue
+        if listed:
+            texts.append(text)
+    texts.extend(q['value'] for q in custom_requirements(job_specs))
+    for text in texts:
         for p in _split_phrases(text):
             if not DECLARATION.match(p) and p not in out:
                 out.append(p)
@@ -808,6 +824,33 @@ def decide(job_specs, documents_text, as_of=None, reading=None):
                                  f'(none of these found: {", ".join(missing)})')
             else:
                 pass
+
+    # 5: extra qualifications HR added on the posting form (checked like skills and other requirements)
+    for q in custom_requirements(job_specs):
+        label, required_text = q['label'], q['value']
+        is_mand = q['mandatory']
+        tag = 'mandatory' if is_mand else 'optional'
+        status, found, missing, declarations = _check_terms(required_text, documents_text,
+                                                            verified['terms'] if verified else None)
+        if status == 'declarations_only':
+            strengths.append(f'{label}: "{required_text}" is the applicant\'s own promise. '
+                             f'Documents cannot prove it, so it is not scored. HR confirms it.')
+            continue
+        total += 1
+        if status == 'pass':
+            met += 1
+            strengths.append(f'{label} ({tag}) verified: found {", ".join(found)}')
+        elif status == 'noterms':
+            weaknesses.append(f'{label} ({tag}) could not be checked by the system: {required_text} '
+                              f'[no key terms could be taken from it. HR should check by hand]')
+        else:
+            line = f'{label} ({tag}) not verified: missing {", ".join(missing)}'
+            if found:
+                line += f' [found: {", ".join(found)}]'
+            weaknesses.append(line)
+            if status == 'none' and is_mand and not doc_problem:
+                auto_fail.append(f'Disqualified: mandatory "{label}" requirement not met '
+                                 f'(none of these found: {", ".join(missing)})')
 
     if verified is not None:
         n_bad = len(verified['rejected'])

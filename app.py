@@ -134,6 +134,7 @@ def parse_custom_qualifications(form):
     """Qualifications HR added on the posting form -> [{'label', 'value'}]. Posted as two parallel lists."""
     labels = form.getlist('cq_label')
     values = form.getlist('cq_value')
+    mandatory = form.getlist('cq_mandatory')
     out, seen = [], set()
     for i, raw in enumerate(labels):
         label = re.sub(r'\s+', ' ', (raw or '').strip())[:60]
@@ -141,7 +142,8 @@ def parse_custom_qualifications(form):
         if not label or not value or label.lower() in seen:
             continue
         seen.add(label.lower())
-        out.append({'label': label, 'value': value})
+        out.append({'label': label, 'value': value,
+                    'mandatory': (mandatory[i] if i < len(mandatory) else '0') == '1'})
         if len(out) >= 10:
             break
     return out
@@ -150,7 +152,8 @@ def parse_custom_qualifications(form):
 def load_custom_qualifications(job):
     try:
         value = json.loads(job['custom_qualifications']) if job and job['custom_qualifications'] else []
-        return [q for q in value if isinstance(q, dict) and q.get('label') and q.get('value')]
+        return [dict(q, mandatory=bool(q.get('mandatory'))) for q in value
+                if isinstance(q, dict) and q.get('label') and q.get('value')]
     except (ValueError, TypeError, KeyError):
         return []
 
@@ -1137,7 +1140,8 @@ def build_job_specs(job):
         'education': job['education'],
         'other_requirements': job['other_requirements'],
         'mandatory_requirements': mandatory,
-        'required_documents': json.loads(job['required_documents']) if job['required_documents'] else []
+        'required_documents': json.loads(job['required_documents']) if job['required_documents'] else [],
+        'custom_qualifications': load_custom_qualifications(job)
     }
 
 @app.route('/admin/job/<int:job_id>/screen')
