@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from '_icons.html' import icon %}
 {% block title %}Admin Dashboard — BulSU HR Portal{% endblock %}
 
 {% block navbar %}
@@ -7,63 +8,75 @@
 {% endblock %}
 
 {% block extra_style %}
-.campus-title {
-    font-size: 17px;
-    font-weight: bold;
-    color: var(--plum);
-    padding: 10px 15px;
-    border-left: 5px solid var(--gold);
-    background: white;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    margin-top: 10px;
-    box-shadow: 0 2px 6px rgba(103,30,30,0.08);
+/* ── Tabs ── */
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin: 0 0 22px; }
+.tabs-pill { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab-pill {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 9px 18px; border: 1px solid transparent; border-radius: 999px;
+    background: transparent; color: #7a6d66;
+    font-family: var(--font-body); font-size: 14px; font-weight: 600; cursor: pointer;
 }
-.job-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 14px 18px;
-    background: white;
-    border-radius: 8px;
-    margin-bottom: 10px;
-    box-shadow: 0 1px 4px rgba(103,30,30,0.07);
-    border-left: 4px solid var(--plum);
+.tab-pill:hover { color: var(--plum); }
+.tab-pill[aria-selected="true"] {
+    background: #fffaf3; border-color: #dfd3c4; color: var(--plum);
+    box-shadow: 0 5px 14px rgba(72,46,29,0.06);
 }
-.job-row:hover { border-left-color: var(--gold-dark); }
-.job-row.archived {
-    background: #f9f9f9;
-    border-left-color: #ccc;
-    opacity: 0.75;
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot.green { background: #2aa568; box-shadow: 0 0 0 3px #dcefe4; }
+.dot.brown { background: #a98264; box-shadow: 0 0 0 3px #eae0d9; }
+
+/* ── Campuses ── */
+.campus-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.campus-group { min-width: 0; border: 1px solid #dfd5c9; background: rgba(255,251,245,0.85); border-radius: 4px; }
+.campus-group.has-jobs { grid-column: 1 / -1; border: 0; background: transparent; margin-bottom: 10px; }
+.campus-group h2 {
+    display: flex; align-items: center; gap: 11px;
+    min-height: 56px; padding: 0 18px;
+    color: #6f151a; font-size: 16px; font-weight: 700;
 }
-.job-row-title { font-weight: bold; color: var(--plum); font-size: 15px; }
-.job-row-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
-.job-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.no-jobs { color: #ccc; font-size: 14px; padding: 8px 15px; }
-.tab-buttons {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #eee;
-    padding-bottom: 10px;
+.campus-group.has-jobs h2 { min-height: 46px; padding: 0; margin-bottom: 10px; font-size: 19px; }
+.pin {
+    display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 30px;
+    border-radius: 50% 50% 50% 6px; background: #efe1df; color: #9a252e; transform: rotate(-8deg);
 }
-.tab-btn {
-    padding: 8px 16px;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    font-weight: bold;
-    cursor: pointer;
-    border-bottom: 3px solid transparent;
-    transition: all 0.2s;
+.pin svg { transform: rotate(8deg); }
+.campus-group.has-jobs .pin { background: #78131a; color: #fff; }
+.campus-rule { flex: 1; height: 1px; margin-left: 8px; background: repeating-linear-gradient(90deg, #cfc1b1 0 12px, transparent 12px 19px); }
+.no-jobs { padding: 14px 18px 16px; border-top: 1px dashed #dfd3c7; color: #9b9088; font-size: 13px; }
+
+/* ── Job cards ── */
+.jobs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.job-card {
+    position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 160px;
+    padding: 22px 22px 18px 28px; overflow: hidden;
+    border: 1px solid #ded3c7; background: linear-gradient(90deg, #7b1219 0 6px, transparent 6px), #fffdf9;
+    box-shadow: 0 10px 24px rgba(64,38,27,0.07);
+    transition: transform 0.16s, box-shadow 0.16s;
 }
-.tab-btn.active {
-    color: var(--plum);
-    border-bottom-color: var(--gold);
+.job-card:nth-child(4n+1) { border-radius: 2px 22px 2px 2px; }
+.job-card:nth-child(4n+2) { border-radius: 22px 2px 2px 2px; }
+.job-card:nth-child(4n+3) { border-radius: 2px 2px 22px 2px; }
+.job-card:nth-child(4n+4) { border-radius: 2px 2px 2px 22px; }
+.job-card:hover { transform: translateY(-3px); box-shadow: 0 15px 30px rgba(64,38,27,0.11); }
+.job-card h3 { margin-bottom: 10px; color: #421f20; font-size: 18px; font-weight: 700; padding-right: 24px; }
+.job-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: #8a7e77; font-size: 13px; }
+.job-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; padding-top: 18px; }
+.job-actions > :only-child { grid-column: 1 / -1; }
+.job-actions form { display: flex; }
+.job-actions form .act { width: 100%; }
+.job-card.archived { background: linear-gradient(90deg, #b9afa6 0 6px, transparent 6px), #faf8f4; box-shadow: none; }
+.job-card.archived h3 { color: #6b5f58; }
+.archive-date { font-size: 12.5px; color: #8a7e77; margin-top: 6px; }
+.empty-card { text-align: center; color: #9b9088; padding: 40px; }
+
+@media (max-width: 760px) {
+    .campus-list, .jobs { grid-template-columns: 1fr; }
 }
-.archived-section { display: none; }
-.archived-section.show { display: block; }
-.archive-date { font-size: 11px; color: #999; margin-top: 2px; }
+@media (max-width: 500px) {
+    .job-card { padding: 20px 16px 16px 22px; }
+    .toolbar { align-items: stretch; flex-direction: column; }
+}
 {% endblock %}
 
 {% block content %}
@@ -72,13 +85,13 @@
     <p>Manage job postings across all BulSU campuses</p>
 </div>
 
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-    <div class="tab-buttons">
-        <button class="tab-btn active" onclick="showTab('active')">
-            ✅ Active Postings
+<div class="toolbar">
+    <div class="tabs-pill" role="tablist" aria-label="Job posting status">
+        <button type="button" role="tab" class="tab-pill" data-tab="active" aria-selected="true">
+            <span class="dot green"></span> Active Postings
         </button>
-        <button class="tab-btn" onclick="showTab('archived')">
-            📦 Archived ({{ archived_jobs|length }})
+        <button type="button" role="tab" class="tab-pill" data-tab="archived" aria-selected="false">
+            <span class="dot brown"></span> Archived ({{ archived_jobs|length }})
         </button>
     </div>
     {% if session.get('role') == 'hrmo' %}<a href="/admin/job/new" class="btn btn-gold">+ Add New Job Posting</a>{% endif %}
@@ -87,100 +100,89 @@
 <!-- ── ACTIVE JOBS ── -->
 <div id="active-tab">
     {% if jobs_by_campus | length > 0 %}
+    <div class="campus-list">
         {% for campus in campuses %}
-        <div class="campus-title">📍 {{ campus }}</div>
         {% set campus_jobs = jobs_by_campus[campus] %}
-        {% if campus_jobs %}
-            {% for job in campus_jobs %}
-            <div class="job-row">
-                <div>
-                    <div class="job-row-title">{{ job.title }}</div>
-                    <div class="job-row-meta">
+        <section class="campus-group{{ ' has-jobs' if campus_jobs else '' }}">
+            <h2><span class="pin">{{ icon('pin', 17) }}</span>{{ campus }}<span class="campus-rule"></span></h2>
+            {% if campus_jobs %}
+            <div class="jobs">
+                {% for job in campus_jobs %}
+                <article class="job-card">
+                    <h3>{{ job.title }}</h3>
+                    <div class="job-meta">
                         {% if job.is_active %}
                         <span class="badge badge-success">Active</span>
                         {% else %}
                         <span class="badge badge-danger">Inactive</span>
                         {% endif %}
-                        &nbsp; Posted: {{ job.created_at.strftime('%Y-%m-%d') if job.created_at else '' }}
+                        <span>Posted: {{ job.created_at.strftime('%Y-%m-%d') if job.created_at else '' }}</span>
                     </div>
-                </div>
-                <div class="job-actions">
-                    <a href="/admin/job/{{ job.id }}/applicants"
-                       class="btn btn-primary btn-sm">👥 Applicants</a>
-                    {% if session.get('role') == 'hrmo' %}
-                    <a href="/admin/job/{{ job.id }}/generate-ad"
-                       class="btn btn-gold btn-sm">🖼️ Job Ad</a>
-                    <a href="/admin/job/{{ job.id }}/edit"
-                       class="btn btn-warning btn-sm">✏️ Edit</a>
-                    <form method="POST" action="/admin/job/{{ job.id }}/delete"
-                          onsubmit="return confirm('Archive this job posting?')">
-                        <button type="submit" class="btn btn-danger btn-sm">📦 Archive</button>
-                    </form>
-                    {% endif %}
-                </div>
+                    <div class="job-actions">
+                        <a href="/admin/job/{{ job.id }}/applicants" class="act act-maroon">{{ icon('users') }} Applicants</a>
+                        {% if session.get('role') == 'hrmo' %}
+                        <a href="/admin/job/{{ job.id }}/generate-ad" class="act act-gold">{{ icon('image') }} Job Ad</a>
+                        <a href="/admin/job/{{ job.id }}/edit" class="act act-gold">{{ icon('edit') }} Edit</a>
+                        <form method="POST" action="/admin/job/{{ job.id }}/delete"
+                              onsubmit="return confirm('Archive this job posting?')">
+                            <button type="submit" class="act act-red">{{ icon('archive') }} Archive</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
             </div>
-            {% endfor %}
-        {% else %}
+            {% else %}
             <p class="no-jobs">No active job postings for this campus.</p>
-        {% endif %}
+            {% endif %}
+        </section>
         {% endfor %}
+    </div>
     {% else %}
-        <div class="card" style="text-align:center; color:#aaa; padding:40px;">
-            No active job postings. <a href="/admin/job/new" style="color:var(--plum);">Create one</a>
-        </div>
+    <div class="card empty-card">
+        No active job postings. <a href="/admin/job/new" style="color:var(--plum);">Create one</a>
+    </div>
     {% endif %}
 </div>
 
 <!-- ── ARCHIVED JOBS ── -->
-<div id="archived-tab" class="archived-section">
+<div id="archived-tab" hidden>
     {% if archived_jobs %}
-        <div class="campus-title">📦 Archived Job Postings</div>
+    <div class="jobs">
         {% for job in archived_jobs %}
-        <div class="job-row archived">
-            <div>
-                <div class="job-row-title">{{ job.title }}</div>
-                <div class="job-row-meta">
-                    📍 {{ job.campus }}
-                </div>
-                <div class="archive-date">
-                    Archived: {{ job.archived_at[:10] if job.archived_at else '' }}
-                    {% set archived_date = job.archived_at | string %}
-                    {% set days_archived = (now | default(none)).days | default(0) %}
-                </div>
-            </div>
+        <article class="job-card archived">
+            <h3>{{ job.title }}</h3>
+            <div class="job-meta"><span style="display:inline-flex; align-items:center; gap:6px;">{{ icon('pin', 14) }} {{ job.campus }}</span></div>
+            <div class="archive-date">Archived: {{ job.archived_at[:10] if job.archived_at else '' }}</div>
+            {% if session.get('role') == 'hrmo' %}
             <div class="job-actions">
-{% if session.get('role') == 'hrmo' %}
                 <form method="POST" action="/admin/job/{{ job.id }}/restore"
                       onsubmit="return confirm('Restore this job posting?')">
-                    <button type="submit" class="btn btn-primary btn-sm">↩️ Restore</button>
+                    <button type="submit" class="act act-maroon">{{ icon('restore') }} Restore</button>
                 </form>
                 <form method="POST" action="/admin/job/{{ job.id }}/delete"
                       onsubmit="return confirm('Permanently delete this job posting? This cannot be undone.')">
-                    <button type="submit" class="btn btn-danger btn-sm">🗑️ Delete</button>
+                    <button type="submit" class="act act-red">{{ icon('trash') }} Delete</button>
                 </form>
-                {% endif %}
             </div>
-        </div>
+            {% endif %}
+        </article>
         {% endfor %}
+    </div>
     {% else %}
-        <div class="card" style="text-align:center; color:#aaa; padding:40px;">
-            No archived job postings.
-        </div>
+    <div class="card empty-card">No archived job postings.</div>
     {% endif %}
 </div>
 
 <script>
-function showTab(tab) {
-    document.getElementById('active-tab').style.display = tab === 'active' ? 'block' : 'none';
-    document.getElementById('archived-tab').classList.remove('show');
-    document.getElementById('archived-tab').style.display = tab === 'archived' ? 'block' : 'none';
-    
-    if (tab === 'archived') {
-        document.getElementById('archived-tab').classList.add('show');
+(function () {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab-pill'));
+    function show(name) {
+        document.getElementById('active-tab').hidden = name !== 'active';
+        document.getElementById('archived-tab').hidden = name !== 'archived';
+        tabs.forEach(function (t) { t.setAttribute('aria-selected', t.getAttribute('data-tab') === name ? 'true' : 'false'); });
     }
-    
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
-}
+    tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.getAttribute('data-tab')); }); });
+})();
 </script>
 {% endblock %}
