@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from datetime import datetime, timedelta, date
 from database import get_db, init_db
 from resume_parser import extract_text_from_pdf
-from screening_rules import decide, posting_terms, applicant_profile, EMPTY_VALUES
+from screening_rules import decide, posting_terms, applicant_profile
 from duplicates import PeopleIndex, same_email
 from ai_screener import advise_applicant, read_documents
 from exporter import export_qualified, export_all, export_applicant_list, export_applicants_by_position
@@ -75,7 +75,7 @@ ensure_position_type_column()
 
 def ensure_extra_field_columns():
     """HR-defined extra questions on a posting, and the applicants' answers to them."""
-    _add_missing_columns('job_postings', ['extra_fields', 'training'])
+    _add_missing_columns('job_postings', ['extra_fields', 'training', 'custom_qualifications'])
     _add_missing_columns('applicants', ['extra_answers'])
 
 
@@ -129,47 +129,30 @@ def load_document_lists(conn=None):
     return {k: (out[k] or fallback[k]) for k in LIST_KEYS}
 
 
-# ---------------------------------------------------------------- qualification lists (per posting)
-QUAL_COLUMNS = {'skills': 'skills', 'education': 'education', 'training': 'training', 'other': 'other_requirements'}
-
-
-def split_items(text):
-    """'A, B (x, y); C' -> ['A', 'B (x, y)', 'C']. Splits at commas, semicolons and new lines,
-    but not inside brackets."""
-    items, buf, depth = [], [], 0
-    for ch in str(text or ''):
-        if ch == '(':
-            depth += 1
-        elif ch == ')' and depth:
-            depth -= 1
-        if depth == 0 and ch in ',;\n\r':
-            items.append(''.join(buf)); buf = []
-        else:
-            buf.append(ch)
-    items.append(''.join(buf))
+# ---------------------------------------------------------------- extra qualifications (per posting)
+def parse_custom_qualifications(form):
+    """Qualifications HR added on the posting form -> [{'label', 'value'}]. Posted as two parallel lists."""
+    labels = form.getlist('cq_label')
+    values = form.getlist('cq_value')
     out, seen = [], set()
-    for it in items:
-        it = re.sub(r'\s+', ' ', it).strip()[:120]
-        if it and it.lower() not in EMPTY_VALUES and it.lower() not in seen:
-            seen.add(it.lower()); out.append(it)
+    for i, raw in enumerate(labels):
+        label = re.sub(r'\s+', ' ', (raw or '').strip())[:60]
+        value = re.sub(r'\s+', ' ', (values[i] if i < len(values) else '').strip())[:500]
+        if not label or not value or label.lower() in seen:
+            continue
+        seen.add(label.lower())
+        out.append({'label': label, 'value': value})
+        if len(out) >= 10:
+            break
     return out
 
 
-def qualification_items(job=None):
-    """The items already saved on a posting, for the form: {'skills': [...], 'education': [...], 'other': [...]}."""
-    return {kind: (split_items(job[column]) if job else []) for kind, column in QUAL_COLUMNS.items()}
-
-
-def qualification_value(form, kind, legacy_field):
-    """The posting's saved text for one qualification: its items, joined with commas."""
-    if 'qual_present' not in form:                 # an old cached form: use the old single text box
-        return form.get(legacy_field, '')
-    items, seen = [], set()
-    for raw in form.getlist(f'qual_{kind}'):
-        for it in split_items(raw):
-            if it.lower() not in seen:
-                seen.add(it.lower()); items.append(it)
-    return ', '.join(items)
+def load_custom_qualifications(job):
+    try:
+        value = json.loads(job['custom_qualifications']) if job and job['custom_qualifications'] else []
+        return [q for q in value if isinstance(q, dict) and q.get('label') and q.get('value')]
+    except (ValueError, TypeError, KeyError):
+        return []
 
 
 DOC_NAME_OK = re.compile(r"^\w[\w &()/,.'\-]{1,119}$")
@@ -259,7 +242,8 @@ def job_detail(job_id):
         return "Job not found", 404
 
     required_docs = json.loads(job['required_documents']) if job['required_documents'] else []
-    return render_template('applicant/job_detail.html', job=job, required_docs=required_docs)
+    return render_template('applicant/job_detail.html', job=job, required_docs=required_docs,
+                           custom_quals=load_custom_qualifications(job))
 
 @app.route('/apply/<int:job_id>', methods=['GET', 'POST'])
 def apply(job_id):
@@ -577,22 +561,23 @@ def admin_new_job():
             INSERT INTO job_postings
             (campus, title, description, skills, experience,
              education, other_requirements, required_documents, mandatory_requirements,
-             deadline, position_type, extra_fields, training)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             deadline, position_type, extra_fields, training, custom_qualifications)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             request.form['campus'],
             request.form['title'],
             request.form['description'],
-            qualification_value(request.form, 'skills', 'skills'),
+            request.form['skills'],
             request.form['experience'],
-            qualification_value(request.form, 'education', 'education'),
-            qualification_value(request.form, 'other', 'other_requirements'),
+            request.form['education'],
+            request.form['other_requirements'],
             json.dumps(required_docs),
             json.dumps(mandatory),
             request.form.get('deadline') or None,
             clean_position_type(request.form.get('position_type')),
             json.dumps(parse_extra_fields(request.form)),
-            qualification_value(request.form, 'training', 'training').strip()[:500]
+            (request.form.get('training') or '').strip()[:500],
+            json.dumps(parse_custom_qualifications(request.form))
         ))
         conn.commit()
         conn.close()
@@ -602,8 +587,7 @@ def admin_new_job():
     lists = load_document_lists()
     return render_template('admin/job_form.html', job=None, campuses=CAMPUSES, mandatory=[],
                            presets={'academic': lists['academic'], 'non_academic': lists['non_academic']},
-                           default_docs=lists['custom'], extra_fields=[],
-                           qual_items=qualification_items())
+                           default_docs=lists['custom'], extra_fields=[], custom_quals=[])
 
 @app.route('/admin/job/<int:job_id>/edit', methods=['GET', 'POST'])
 def admin_edit_job(job_id):
@@ -632,23 +616,24 @@ def admin_edit_job(job_id):
             campus=?, title=?, description=?, skills=?,
             experience=?, education=?, other_requirements=?,
             required_documents=?, mandatory_requirements=?, is_active=?,
-            deadline=?, position_type=?, extra_fields=?, training=?
+            deadline=?, position_type=?, extra_fields=?, training=?, custom_qualifications=?
             WHERE id=?
         ''', (
             request.form['campus'],
             request.form['title'],
             request.form['description'],
-            qualification_value(request.form, 'skills', 'skills'),
+            request.form['skills'],
             request.form['experience'],
-            qualification_value(request.form, 'education', 'education'),
-            qualification_value(request.form, 'other', 'other_requirements'),
+            request.form['education'],
+            request.form['other_requirements'],
             json.dumps(required_docs),
             json.dumps(mandatory),
             1 if 'is_active' in request.form else 0,
             request.form.get('deadline') or None,
             clean_position_type(request.form.get('position_type')),
             json.dumps(parse_extra_fields(request.form)),
-            qualification_value(request.form, 'training', 'training').strip()[:500],
+            (request.form.get('training') or '').strip()[:500],
+            json.dumps(parse_custom_qualifications(request.form)),
             job_id
         ))
         conn.commit()
@@ -663,7 +648,7 @@ def admin_edit_job(job_id):
                            mandatory=mandatory, campuses=CAMPUSES,
                            presets={'academic': lists['academic'], 'non_academic': lists['non_academic']},
                            default_docs=lists['custom'], extra_fields=load_extra_fields(job),
-                           qual_items=qualification_items(job))
+                           custom_quals=load_custom_qualifications(job))
 
 @app.route('/admin/document-types/add', methods=['POST'])
 def admin_document_type_add():

@@ -1,6 +1,7 @@
 from groq import Groq
 from PIL import Image, ImageDraw, ImageFont
 import io
+import json
 import os
 from datetime import datetime, timezone, timedelta
 from config import GROQ_API_KEY
@@ -155,6 +156,17 @@ def _draw_title(draw, job):
     if campus:
         draw.text((cx, y + 2), campus, fill=BAR_INK, font=get_font(24, bold=True), anchor="ma")
 
+def _custom_rows(job):
+    """Qualifications HR added on the posting form (stored as JSON text)."""
+    raw = job.get("custom_qualifications")
+    try:
+        items = json.loads(raw) if isinstance(raw, str) else (raw or [])
+    except ValueError:
+        return []
+    return [(str(q.get("label")), str(q.get("value"))) for q in items
+            if isinstance(q, dict) and q.get("label") and q.get("value")]
+
+
 def _draw_qualifications(draw, job):
     x0, y0, x1, y1 = QUAL_BOX
     rows = [
@@ -163,7 +175,7 @@ def _draw_qualifications(draw, job):
         ("Training", job.get("training") or "None required"),
         ("Eligibility", job.get("other_requirements")),
         ("Skills", job.get("skills")),
-    ]
+    ] + _custom_rows(job)
     rows = [(l, v) for l, v in rows if v]
     for size in range(30, 17, -1):
         label_font, value_font = get_font(size, bold=True), get_font(size)

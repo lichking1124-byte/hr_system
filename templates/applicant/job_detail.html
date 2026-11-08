@@ -76,6 +76,12 @@
         <span class="spec-label">Skills:</span>
         <span>{{ job.skills }}</span>
     </div>
+    {% for q in (custom_quals or []) %}
+    <div class="spec-item">
+        <span class="spec-label">{{ q.label }}:</span>
+        <span>{{ q.value }}</span>
+    </div>
+    {% endfor %}
 </div>
 
 <div class="card">
