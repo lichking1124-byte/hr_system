@@ -7,204 +7,232 @@
 {% endblock %}
 
 {% block extra_style %}
-.doc-list { margin-top: 10px; }
-.doc-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    background: #fff8d6;
-    border-radius: 6px;
-    margin-bottom: 8px;
-    font-size: 14px;
-    border-left: 3px solid var(--gold-dark);
+/* ── Form panels ── */
+.form-wrap { max-width: 940px; margin: 0 auto; }
+.form-panel {
+    padding: 30px 34px; margin-bottom: 20px;
+    border: 1px solid #ded7cf; border-radius: 14px;
+    background: rgba(255,255,255,0.94);
+    box-shadow: 0 12px 35px rgba(61,45,36,0.055);
 }
-.doc-item input[type="checkbox"] { width: auto; accent-color: var(--plum); }
-.add-doc { display: flex; gap: 10px; margin-top: 12px; }
-.add-doc input { flex: 1; }
-.section-divider {
-    font-size: 15px;
-    font-weight: bold;
-    color: var(--plum);
-    margin: 25px 0 15px 0;
-    padding-bottom: 8px;
-    border-bottom: 2px solid var(--gold);
+.panel-title { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e6e0d9; }
+.panel-title h2 { font-size: 22px; color: #382824; margin: 0 0 4px; letter-spacing: -0.01em; }
+.panel-title p { margin: 0; color: #867c73; font-size: 13px; line-height: 1.5; max-width: 720px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 24px; }
+.form-grid .wide { grid-column: 1 / -1; }
+.field label { margin-top: 0; font-size: 13px; font-weight: 700; color: #4b4039; }
+.field label b { color: #9b1821; }
+.field input, .field select, .field textarea { border-color: #cfc7bf; border-radius: 7px; }
+.field textarea { height: 120px; }
+.field-hint { font-size: 12px; color: #8f857d; margin-top: 6px; line-height: 1.45; }
+
+/* ── Qualifications ── */
+.notice {
+    display: flex; align-items: flex-start; gap: 11px; margin-bottom: 22px; padding: 13px 15px;
+    border: 1px solid #ebdca0; border-radius: 8px; background: #fff9d9; color: #725b29; font-size: 13px; line-height: 1.5;
 }
-.qual-row {
-    display: flex;
-    gap: 15px;
-    align-items: flex-end;
-    margin-top: 10px;
+.notice .i {
+    width: 20px; height: 20px; flex: 0 0 20px; display: grid; place-items: center;
+    border-radius: 50%; background: #c5960d; color: #fff; font: 700 12px Georgia, serif;
 }
-.qual-row > div:first-child { flex: 1; }
-.mandatory-box {
-    min-width: 100px;
-    padding-bottom: 8px;
-    text-align: center;
-}
-.mandatory-box label {
-    font-size: 12px;
-    color: #888;
-    margin-top: 0;
-    margin-bottom: 6px;
-}
-.mandatory-note {
-    font-size: 13px;
-    color: #666;
-    background: #fff8d6;
-    padding: 10px 14px;
-    border-radius: 6px;
-    border-left: 3px solid var(--gold-dark);
-    margin-bottom: 15px;
-}
-.cq-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
-.cq-row input { margin: 0; }
-.cq-row input[name="cq_label"] { width: 34%; font-weight: bold; }
-.cq-row input[name="cq_value"] { flex: 1 1 200px; }
-.cq-row { flex-wrap: wrap; }
-.cq-mand { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: bold; color: var(--plum); white-space: nowrap; }
-.cq-mand input { width: auto; margin: 0; accent-color: var(--plum); }
-.doc-item .doc-name { flex: 1; }
-.doc-actions { display: flex; gap: 4px; }
-.doc-btn {
-    background: #fff; border: 1px solid #d9c27a; color: var(--plum); border-radius: 5px;
-    width: 30px; height: 28px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0;
-}
-.doc-btn:hover { background: #f3e6e6; border-color: var(--plum); }
-.doc-btn.danger { color: #a40000; }
+.qual-list { display: grid; gap: 18px; }
+.qual-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 22px; align-items: end; margin: 0; }
+.qual-row > div:first-child { min-width: 0; }
+.qual-row label { margin-top: 0; font-size: 13px; font-weight: 700; color: #4b4039; }
+.mandatory-box { min-width: 0; padding-bottom: 10px; text-align: left; }
+.mandatory-box label { font-size: 11px; color: #80766e; font-weight: 600; margin: 0 0 6px; }
+.mandatory-box .yes { display: flex; align-items: center; gap: 6px; }
+.mandatory-box .yes input { width: 16px; height: 16px; accent-color: var(--plum); margin: 0; }
+.mandatory-box .yes span { font-size: 13px; color: var(--plum); font-weight: 700; }
+.mandatory-box .info-only { font-size: 12px; color: #9a9189; padding-bottom: 2px; }
 .chip-box {
-    display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid #ccc;
-    border-radius: 6px; background: #fff; min-height: 44px; align-items: center; cursor: text;
+    display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; min-height: 46px; align-items: center; cursor: text;
+    border: 1px solid #cfc7bf; border-radius: 7px; background: #fff;
 }
 .chip {
     display: inline-flex; align-items: center; background: #fff8d6; border: 1px solid #d9c27a;
-    color: var(--plum); border-radius: 14px; padding: 3px 4px 3px 10px; font-size: 13px;
+    color: var(--plum); border-radius: 14px; padding: 3px 4px 3px 11px; font-size: 13px; font-weight: 600;
 }
 .chip button { background: none; border: 0; cursor: pointer; color: var(--plum); font-size: 15px; line-height: 1; padding: 0 6px; }
-.chip-box input { flex: 1; min-width: 160px; width: auto; border: 0; outline: none; padding: 6px; margin: 0; background: transparent; }
-.field-hint { font-size: 12px; color: #888; margin-top: 4px; }
-.extra-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-.extra-row input { flex: 1; margin: 0; }
-.extra-row select { width: 120px; margin: 0; }
+.chip-box input { flex: 1; min-width: 160px; width: auto; height: auto; border: 0; outline: none; padding: 6px; margin: 0; background: transparent; box-shadow: none; }
+.inline-add, .add-doc { display: flex; gap: 10px; margin-top: 20px; }
+.inline-add input, .add-doc input { flex: 1; border-color: #cfc7bf; border-radius: 7px; }
+.inline-add .btn, .add-doc .btn { white-space: nowrap; }
+.cq-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.cq-row input { margin: 0; border-color: #cfc7bf; border-radius: 7px; }
+.cq-row input[name="cq_label"] { width: 34%; font-weight: 700; }
+.cq-row input[name="cq_value"] { flex: 1 1 200px; }
+.cq-mand { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 700; color: var(--plum); white-space: nowrap; }
+.cq-mand input { width: auto; margin: 0; accent-color: var(--plum); }
+
+/* ── Documents: numbered cards in two columns ── */
+.doc-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; counter-reset: doc; margin-top: 0; }
+.doc-item {
+    counter-increment: doc; min-height: 52px; display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px 8px 12px; margin: 0; font-size: 14px;
+    border: 1px solid #e5d99e; border-left: 3px solid #c89a12; border-radius: 7px; background: #fffbea;
+}
+.doc-item::before {
+    content: counter(doc, decimal-leading-zero);
+    width: 26px; height: 26px; flex: 0 0 26px; display: grid; place-items: center;
+    border-radius: 50%; background: #efe2aa; color: #71550a; font-size: 11px; font-weight: 700;
+}
+.doc-item input[type="checkbox"] { width: 16px; height: 16px; flex: 0 0 16px; margin: 0; accent-color: var(--plum); }
+.doc-item .doc-name { flex: 1; min-width: 0; font-weight: 600; color: #4a4037; overflow: hidden; text-overflow: ellipsis; }
+.doc-actions { display: flex; gap: 4px; }
+.doc-btn {
+    background: #fff; border: 1px solid #dbc261; color: var(--plum); border-radius: 5px;
+    width: 28px; height: 28px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0;
+}
+.doc-btn:hover { background: #f3e6e6; border-color: var(--plum); }
+.doc-btn.danger { color: #a40000; }
+
+/* ── Extra applicant fields ── */
+.extra-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.extra-row input { flex: 1; margin: 0; border-color: #cfc7bf; border-radius: 7px; }
+.extra-row select { width: 130px; margin: 0; border-color: #cfc7bf; border-radius: 7px; }
+
+/* ── Status + actions ── */
+.status-line { display: flex; align-items: center; gap: 10px; margin: 0; font-weight: 600; color: #333; }
+.status-line input { width: 16px; height: 16px; accent-color: var(--plum); margin: 0; }
+.form-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; margin-bottom: 8px; }
+.form-actions .btn { min-height: 46px; padding: 0 24px; display: inline-flex; align-items: center; justify-content: center; }
+.form-actions .btn-gold { min-width: 220px; }
+
+@media (max-width: 760px) {
+    .form-panel { padding: 22px 18px; border-radius: 10px; }
+    .form-grid, .doc-list { grid-template-columns: 1fr; }
+    .form-grid .wide { grid-column: auto; }
+    .qual-row { grid-template-columns: 1fr; gap: 6px; }
+    .mandatory-box { padding-bottom: 0; }
+    .mandatory-box > label:first-child { display: none; }
+    .inline-add, .add-doc { flex-direction: column; }
+    .form-actions { flex-direction: column-reverse; }
+    .form-actions .btn-gold { min-width: 0; }
+    .cq-row input[name="cq_label"] { width: 100%; }
+}
 {% endblock %}
 
 {% block content %}
-<div style="max-width:700px; margin:0 auto;">
+<div class="form-wrap">
     <div class="page-header">
         <h1>{% if job %}Edit Job Posting{% else %}New Job Posting{% endif %}</h1>
         <p>{% if job %}Update the details for this position{% else %}Create a new position listing{% endif %}</p>
     </div>
 
-    <div class="card">
-        <form method="POST" id="job-form">
-            <div class="section-divider">Position Details</div>
+    <form method="POST" id="job-form">
 
-            <label>Campus *</label>
-            <select name="campus" required>
-                {% for campus in campuses %}
-                <option value="{{ campus }}"
-                    {% if job and job.campus == campus %}selected{% endif %}>
-                    {{ campus }}
-                </option>
-                {% endfor %}
-            </select>
+        <section class="form-panel">
+            <div class="panel-title"><h2>Position Details</h2></div>
+            <div class="form-grid">
+                <div class="field">
+                    <label>Campus <b>*</b></label>
+                    <select name="campus" required>
+                        {% for campus in campuses %}
+                        <option value="{{ campus }}"
+                            {% if job and job.campus == campus %}selected{% endif %}>
+                            {{ campus }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Job Title <b>*</b></label>
+                    <input name="title" placeholder="e.g. Administrative Officer"
+                           value="{{ job.title if job else '' }}" required>
+                </div>
+                <div class="field">
+                    <label>Position Type</label>
+                    <select name="position_type" id="position_type" onchange="applyPreset()">
+                        <option value="" {% if not job or not job.position_type %}selected{% endif %}>Custom (I will choose the documents)</option>
+                        <option value="academic" {% if job and job.position_type == 'academic' %}selected{% endif %}>Academic position</option>
+                        <option value="non_academic" {% if job and job.position_type == 'non_academic' %}selected{% endif %}>Non-academic position</option>
+                    </select>
+                    <div class="field-hint">Choosing Academic or Non-academic fills in HR's official list of required documents. You can still edit it.</div>
+                </div>
+                <div class="field">
+                    <label>Application Deadline</label>
+                    <input type="date" name="deadline"
+                           value="{{ job.deadline if job and job.deadline else '' }}">
+                    <div class="field-hint">Shown on the job ad poster. Leave blank to show "To be announced".</div>
+                </div>
+                <div class="field wide">
+                    <label>Job Description</label>
+                    <textarea name="description"
+                              placeholder="Describe the role and responsibilities...">{{ job.description if job else '' }}</textarea>
+                </div>
+            </div>
+        </section>
 
-            <label>Job Title *</label>
-            <input name="title" placeholder="e.g. Administrative Officer"
-                   value="{{ job.title if job else '' }}" required>
+        <section class="form-panel">
+            <div class="panel-title"><h2>Qualifications</h2></div>
 
-            <label>Position Type</label>
-            <select name="position_type" id="position_type" onchange="applyPreset()">
-                <option value="" {% if not job or not job.position_type %}selected{% endif %}>Custom (I will choose the documents)</option>
-                <option value="academic" {% if job and job.position_type == 'academic' %}selected{% endif %}>Academic position</option>
-                <option value="non_academic" {% if job and job.position_type == 'non_academic' %}selected{% endif %}>Non-academic position</option>
-            </select>
-            <div style="font-size:12px; color:#888; margin-top:4px;">
-                Choosing Academic or Non-academic fills in HR's official list of required documents. You can still edit it.
+            <div class="notice">
+                <span class="i">i</span>
+                <div>Check <strong>Mandatory</strong> to <strong>automatically disqualify</strong>
+                applicants who cannot verify that requirement through submitted documents.</div>
             </div>
 
-            <label>Application Deadline</label>
-            <input type="date" name="deadline"
-                   value="{{ job.deadline if job and job.deadline else '' }}">
-            <div style="font-size:12px; color:#888; margin-top:4px;">
-                Shown on the job ad poster. Leave blank to show "To be announced".
-            </div>
-
-            <label>Job Description</label>
-            <textarea name="description"
-                      placeholder="Describe the role and responsibilities...">{{ job.description if job else '' }}</textarea>
-
-            <div class="section-divider">Qualifications</div>
-
-            <div class="mandatory-note">
-                ⚠️ Check <strong>Mandatory</strong> to <strong>automatically disqualify</strong>
-                applicants who cannot verify that requirement through submitted documents.
-            </div>
-
+            <div class="qual-list">
             <div class="qual-row">
                 <div>
-                    <label style="margin-top:0;">Education</label>
+                    <label>Education</label>
                     <input name="education" placeholder="e.g. Bachelor's degree in any field"
                            value="{{ job.education if job else '' }}">
                 </div>
                 <div class="mandatory-box">
                     <label>Mandatory?</label>
-                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
-                        <input type="checkbox" name="mandatory_education"
-                               style="width:auto; accent-color:var(--plum);"
-                               {% if mandatory and 'education' in mandatory %}checked{% endif %}>
-                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    <div class="yes">
+                        <input type="checkbox" name="mandatory_education" {% if mandatory and 'education' in mandatory %}checked{% endif %}>
+                        <span>Yes</span>
                     </div>
                 </div>
             </div>
 
             <div class="qual-row">
                 <div>
-                    <label style="margin-top:0;">Experience</label>
+                    <label>Experience</label>
                     <input name="experience" placeholder="e.g. At least 6 months in an IT support role"
                            value="{{ job.experience if job else '' }}">
                 </div>
                 <div class="mandatory-box">
                     <label>Mandatory?</label>
-                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
-                        <input type="checkbox" name="mandatory_experience"
-                               style="width:auto; accent-color:var(--plum);"
-                               {% if mandatory and 'experience' in mandatory %}checked{% endif %}>
-                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    <div class="yes">
+                        <input type="checkbox" name="mandatory_experience" {% if mandatory and 'experience' in mandatory %}checked{% endif %}>
+                        <span>Yes</span>
                     </div>
                 </div>
             </div>
 
             <div class="qual-row">
                 <div>
-                    <label style="margin-top:0;">Training</label>
+                    <label>Training</label>
                     <input name="training" maxlength="500" placeholder="e.g. 8 hours of relevant training"
                            value="{{ job.training if job and job.training else '' }}">
                     <div class="field-hint">Shown on the posting and the job ad. The screening does not check it.</div>
                 </div>
+                <div class="mandatory-box"><div class="info-only">Not screened</div></div>
             </div>
 
             <div class="qual-row">
                 <div>
-                    <label style="margin-top:0;">Eligibility</label>
+                    <label>Eligibility</label>
                     <input name="other_requirements"
                            placeholder="e.g. PRC License, CS Professional, willing to work on-site"
                            value="{{ job.other_requirements if job else '' }}">
                 </div>
                 <div class="mandatory-box">
                     <label>Mandatory?</label>
-                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
-                        <input type="checkbox" name="mandatory_other"
-                               style="width:auto; accent-color:var(--plum);"
-                               {% if mandatory and 'other' in mandatory %}checked{% endif %}>
-                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    <div class="yes">
+                        <input type="checkbox" name="mandatory_other" {% if mandatory and 'other' in mandatory %}checked{% endif %}>
+                        <span>Yes</span>
                     </div>
                 </div>
             </div>
 
             <div class="qual-row">
                 <div>
-                    <label style="margin-top:0;">Skills</label>
+                    <label>Skills</label>
                     <input type="hidden" name="skills" id="skills-value" value="{{ job.skills if job else '' }}">
                     <div class="chip-box" id="skills-box">
                         <input type="text" id="skill-input" maxlength="80"
@@ -214,13 +242,12 @@
                 </div>
                 <div class="mandatory-box">
                     <label>Mandatory?</label>
-                    <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
-                        <input type="checkbox" name="mandatory_skills"
-                               style="width:auto; accent-color:var(--plum);"
-                               {% if mandatory and 'skills' in mandatory %}checked{% endif %}>
-                        <span style="font-size:13px; color:var(--plum); font-weight:bold;">Yes</span>
+                    <div class="yes">
+                        <input type="checkbox" name="mandatory_skills" {% if mandatory and 'skills' in mandatory %}checked{% endif %}>
+                        <span>Yes</span>
                     </div>
                 </div>
+            </div>
             </div>
 
             {% macro cq_row(label, value, mandatory) %}
@@ -236,8 +263,8 @@
             <div id="custom-qual-list">
                 {% for q in (custom_quals or []) %}{{ cq_row(q.label, q.value, q.mandatory) }}{% endfor %}
             </div>
-            <div class="add-doc">
-                <input type="text" id="custom-qual" maxlength="60" placeholder="Add a qualification...">
+            <div class="inline-add">
+                <input type="text" id="custom-qual" maxlength="60" placeholder="Add a qualification..." aria-label="Add a qualification">
                 <button type="button" class="btn btn-primary" id="add-custom-qual">+ Add</button>
             </div>
             <div class="field-hint">
@@ -245,13 +272,15 @@
                 applicant's documents, so word it the way it would appear there. Check <strong>Mandatory</strong> to
                 disqualify applicants whose readable documents clearly do not show it.
             </div>
+        </section>
 
-            <div class="section-divider">Required Documents</div>
-            <p style="font-size:13px; color:#666; margin-bottom:12px;">
-                Select the documents applicants must submit for this position. Use ↑ and ↓ to set the order
+        <section class="form-panel">
+            <div class="panel-title">
+                <h2>Required Documents</h2>
+                <p>Select the documents applicants must submit for this position. Use ↑ and ↓ to set the order
                 applicants see them in. Adding or deleting (✕) a document changes the shared list, so it applies to
-                every job posting.
-            </p>
+                every job posting.</p>
+            </div>
 
             {% macro doc_row(doc, checked) %}
             <div class="doc-item">
@@ -282,12 +311,14 @@
                     + Add
                 </button>
             </div>
+        </section>
 
-            <div class="section-divider">Additional Applicant Information</div>
-            <p style="font-size:13px; color:#666; margin-bottom:12px;">
-                Applicants are always asked for their name, email and phone number. Add other questions here, for
-                example "Home address". Each one appears as a text box on the application form.
-            </p>
+        <section class="form-panel">
+            <div class="panel-title">
+                <h2>Additional Applicant Information</h2>
+                <p>Applicants are always asked for their name, email and phone number. Add other questions here, for
+                example "Home address". Each one appears as a text box on the application form.</p>
+            </div>
 
             {% macro extra_row(label, required) %}
             <div class="extra-row">
@@ -305,28 +336,24 @@
                 {% for f in (extra_fields or []) %}{{ extra_row(f.label, f.required) }}{% endfor %}
             </div>
             <button type="button" class="btn btn-primary" id="add-extra">+ Add field</button>
+        </section>
 
-            {% if job %}
-            <div style="margin-top:20px; padding:12px 15px; background:#fff8d6;
-                        border-radius:6px; border-left:3px solid var(--gold-dark);">
-                <label style="display:flex; align-items:center; gap:10px;
-                              font-weight:normal; margin:0; color:#333;">
-                    <input type="checkbox" name="is_active" style="width:auto;"
-                           {% if job.is_active %}checked{% endif %}>
-                    <span>Active — visible to applicants on the portal</span>
-                </label>
-            </div>
-            {% endif %}
+        {% if job %}
+        <section class="form-panel">
+            <label class="status-line">
+                <input type="checkbox" name="is_active" {% if job.is_active %}checked{% endif %}>
+                <span>Active — visible to applicants on the portal</span>
+            </label>
+        </section>
+        {% endif %}
 
-            <div style="display:flex; gap:10px; margin-top:25px;">
-                <button type="submit" class="btn btn-gold"
-                        style="flex:1; padding:13px; font-size:15px;">
-                    {% if job %}Save Changes{% else %}Create Job Posting{% endif %}
-                </button>
-                <a href="/admin" class="btn btn-primary" style="padding:13px;">Cancel</a>
-            </div>
-        </form>
-    </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-gold">
+                {% if job %}Save Changes{% else %}Create Job Posting{% endif %}
+            </button>
+            <a href="/admin" class="btn btn-primary">Cancel</a>
+        </div>
+    </form>
 </div>
 
 <script>
